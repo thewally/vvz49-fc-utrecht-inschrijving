@@ -12,9 +12,28 @@
 
   $('#titel').textContent = C.WEDSTRIJD;
   $('#datum').textContent = C.DATUM_TEKST;
-  fetch('intro.html', { cache: 'no-cache' }).then(r => r.ok ? r.text() : '').then(h => { $('#intro').innerHTML = h; });
+  const datumTijd = (d) => new Date(d).toLocaleString('nl-NL', {
+    timeZone: 'Europe/Amsterdam', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit' }).replace(/ om /, ' ').replace(/(\d{2}:\d{2})$/, 'om $1 uur');
+  let sluitdatum = null;
+  const vulSluitdatum = () => { if (sluitdatum) $$('[data-sluitdatum]').forEach(el => el.textContent = datumTijd(sluitdatum)); };
+
+  fetch('intro.html', { cache: 'no-cache' }).then(r => r.ok ? r.text() : '').then(h => { $('#intro').innerHTML = h; vulSluitdatum(); });
+
 
   const rpc = (naam, body) => window.vvzRpc(naam, body);
+
+  rpc('formulier_status').then(st => {
+    sluitdatum = st && st.sluitdatum;
+    vulSluitdatum();
+    if (st && st.open === false) {
+      $('#formulier').classList.add('verborgen');
+      $('#stappen').classList.add('verborgen');
+      const g = $('#gesloten');
+      g.textContent = `De inschrijving is gesloten${sluitdatum ? ' sinds ' + datumTijd(sluitdatum) : ''}. Je kunt je niet meer aanmelden.`;
+      g.classList.remove('verborgen');
+    }
+  }).catch(() => {});
 
   rpc('teams').then(t => { if (Array.isArray(t) && t.length) { TEAMS = t; vulTeams(); } }).catch(() => {});
 

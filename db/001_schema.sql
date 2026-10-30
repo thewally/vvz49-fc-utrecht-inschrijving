@@ -162,6 +162,11 @@ declare
   v_geb     date;
   v_cat     text;
 begin
+  if exists (select 1 from beheer_instellingen
+             where sleutel = 'sluitdatum' and waarde::timestamptz < now()) then
+    raise exception 'De inschrijving is gesloten.';
+  end if;
+
   if jsonb_typeof(personen) <> 'array'
      or jsonb_array_length(personen) < 1
      or jsonb_array_length(personen) > 30 then
@@ -516,6 +521,34 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------
+-- Sluitdatum van het inschrijfformulier
+-- ---------------------------------------------------------------
+create or replace function public.formulier_status()
+returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'sluitdatum', (select waarde::timestamptz from beheer_instellingen where sleutel = 'sluitdatum'),
+    'open', not exists (select 1 from beheer_instellingen
+                        where sleutel = 'sluitdatum' and waarde::timestamptz < now()))
+$$;
+
+create or replace function public.beheer_zet_sluitdatum(wachtwoord text, sluitdatum timestamptz)
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if not beheer_check(wachtwoord) then
+    return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
+  end if;
+  if sluitdatum is null then
+    delete from beheer_instellingen where sleutel = 'sluitdatum';
+  else
+    insert into beheer_instellingen (sleutel, waarde) values ('sluitdatum', sluitdatum::text)
+    on conflict (sleutel) do update set waarde = excluded.waarde;
+  end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- ---------------------------------------------------------------
 -- Rechten: publiek mag alléén de functies hierboven aanroepen
 -- ---------------------------------------------------------------
 revoke all on all tables in schema public from public;
@@ -536,7 +569,9 @@ begin
       public.beheer_verwijder_inschrijving(text, uuid),
       public.beheer_voeg_deelnemer_toe(text, uuid, jsonb),
       public.beheer_verwijder_deelnemer(text, uuid),
-      public.beheer_zet_taak(text, uuid, boolean)
+      public.beheer_zet_taak(text, uuid, boolean),
+      public.formulier_status(),
+      public.beheer_zet_sluitdatum(text, timestamptz)
     to anonymous;
   else
     raise notice 'Rol "anonymous" bestaat nog niet: zet eerst de Data API aan en draai de migratie opnieuw.';
@@ -556,7 +591,9 @@ begin
       public.beheer_verwijder_inschrijving(text, uuid),
       public.beheer_voeg_deelnemer_toe(text, uuid, jsonb),
       public.beheer_verwijder_deelnemer(text, uuid),
-      public.beheer_zet_taak(text, uuid, boolean)
+      public.beheer_zet_taak(text, uuid, boolean),
+      public.formulier_status(),
+      public.beheer_zet_sluitdatum(text, timestamptz)
     to authenticated;
   end if;
 end $$;

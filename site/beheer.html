@@ -38,6 +38,9 @@
     .taak.open-taak { color: #b26a00; }
     .vervallen { color: var(--grijs); text-decoration: line-through; }
     .teams { font-size: .9rem; columns: 3 180px; margin-bottom: 20px; }
+    .sluit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 16px;
+             padding: 10px 12px; border: 1px solid var(--rand); border-radius: 8px; }
+    .sluit input { width: auto; padding: 6px 10px; }
     .knoppen { display: flex; gap: 6px; flex-wrap: wrap; }
     .klein { padding: 4px 10px; font-size: .85rem; font-weight: 600; }
     .knop-gevaar { background: #fff; color: var(--fout); border-color: var(--fout); }
@@ -62,6 +65,13 @@
   </form>
 
   <main id="beheer" class="verborgen">
+    <div class="sluit">
+      <label for="sluitdatum"><strong>Inschrijving open tot</strong></label>
+      <input id="sluitdatum" type="datetime-local">
+      <button class="knop-primair klein" id="sluit-opslaan">Opslaan</button>
+      <button class="knop-secundair klein" id="sluit-wis">Geen sluitdatum</button>
+      <span id="sluit-status" class="samenvatting"></span>
+    </div>
     <div class="kpi" id="kpi"></div>
     <details><summary><strong>Aantal per team</strong></summary><div class="teams" id="teams"></div></details>
     <div class="balk" style="margin-top:16px">
@@ -126,6 +136,7 @@
     sessionStorageSet(ww);
     data = res.inschrijvingen;
     verwijderd = res.verwijderd || [];
+    laadSluitdatum();
     $('#login').classList.add('verborgen');
     $('#beheer').classList.remove('verborgen');
     teken();
@@ -388,6 +399,38 @@
     bewaarKlap(); knopTekst(); teken();
   });
   knopTekst();
+
+  // ---------- sluitdatum ----------
+  const naarInvoer = (d) => {
+    const x = new Date(d), p = (n) => String(n).padStart(2, '0');
+    return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}T${p(x.getHours())}:${p(x.getMinutes())}`;
+  };
+  function toonSluitStatus(st) {
+    const el = $('#sluit-status');
+    if (!st.sluitdatum) { el.textContent = 'Geen sluitdatum: het formulier blijft open.'; return; }
+    el.textContent = st.open ? `Formulier is open tot ${datum(st.sluitdatum)}.` : `Formulier is gesloten sinds ${datum(st.sluitdatum)}.`;
+  }
+  async function laadSluitdatum() {
+    try {
+      const st = await rpc('formulier_status', {});
+      $('#sluitdatum').value = st.sluitdatum ? naarInvoer(st.sluitdatum) : '';
+      toonSluitStatus(st);
+    } catch (err) { $('#sluit-status').textContent = err.message; }
+  }
+  async function zetSluitdatum(waarde) {
+    const res = await rpc('beheer_zet_sluitdatum', { wachtwoord: ww, sluitdatum: waarde });
+    if (!res.ok) throw new Error(res.fout || 'Opslaan mislukt');
+    await laadSluitdatum();
+  }
+  $('#sluit-opslaan').addEventListener('click', () => {
+    const v = $('#sluitdatum').value;
+    if (!v) { alert('Kies eerst een datum en tijd.'); return; }
+    zetSluitdatum(new Date(v).toISOString()).catch(err => alert(err.message));
+  });
+  $('#sluit-wis').addEventListener('click', () => {
+    if (!confirm('Sluitdatum verwijderen? Het formulier blijft dan open.')) return;
+    zetSluitdatum(null).then(() => { $('#sluitdatum').value = ''; }).catch(err => alert(err.message));
+  });
 
   $('#ververs').addEventListener('click', () => laad().catch(err => alert(err.message)));
 
