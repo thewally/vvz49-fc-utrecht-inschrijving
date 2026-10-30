@@ -28,15 +28,21 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Neon URL's invullen vanuit secrets
+      - name: Data API URL invullen vanuit secret
         env:
           NEON_DATA_API_URL: ${{ secrets.NEON_DATA_API_URL }}
-          NEON_AUTH_URL: ${{ secrets.NEON_AUTH_URL }}
         run: |
           if [ -z "$NEON_DATA_API_URL" ]; then echo "::error::Secret NEON_DATA_API_URL ontbreekt"; exit 1; fi
-          if [ -z "$NEON_AUTH_URL" ]; then echo "::error::Secret NEON_AUTH_URL ontbreekt"; exit 1; fi
-          sed -i "s|__NEON_DATA_API_URL__|${NEON_DATA_API_URL%/}|; s|__NEON_AUTH_URL__|${NEON_AUTH_URL%/}|" site/config.js
-          grep -q "__NEON_" site/config.js && exit 1 || echo "config.js ingevuld"
+          sed -i "s|__NEON_DATA_API_URL__|${NEON_DATA_API_URL%/}|" site/config.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: JWKS en anoniem token maken
+        env:
+          JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
+        run: |
+          node scripts/make-token.mjs
+          grep -q "__" site/config.js && { echo "::error::config.js niet volledig ingevuld"; exit 1; } || true
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

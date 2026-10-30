@@ -280,9 +280,17 @@ begin
     raise notice 'Rol "anonymous" bestaat nog niet: zet eerst de Data API aan en draai de migratie opnieuw.';
   end if;
 
+  -- Zelfde beperkte rechten voor "authenticated", voor het geval een token zonder role-claim binnenkomt
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
     revoke all on all tables in schema public from authenticated;
     revoke execute on all functions in schema public from authenticated;
+    grant usage on schema public to authenticated;
+    grant execute on function
+      public.teams(),
+      public.registreer(jsonb, jsonb),
+      public.beheer_overzicht(text),
+      public.beheer_zet_betaald(text, uuid, boolean)
+    to authenticated;
   end if;
 end $$;
 
