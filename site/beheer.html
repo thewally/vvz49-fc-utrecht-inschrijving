@@ -27,6 +27,13 @@
     table.lijst th, table.lijst td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--rand); }
     table.lijst th { color: var(--grijs); font-weight: 600; }
     .teams { font-size: .9rem; columns: 3 180px; margin-bottom: 20px; }
+    .knoppen { display: flex; gap: 6px; flex-wrap: wrap; }
+    .klein { padding: 4px 10px; font-size: .85rem; font-weight: 600; }
+    .knop-gevaar { background: #fff; color: var(--fout); border-color: var(--fout); }
+    td.acties-cel { text-align: right; white-space: nowrap; }
+    dialog { border: none; border-radius: 10px; padding: 20px; width: min(520px, calc(100vw - 32px)); }
+    dialog::backdrop { background: rgba(0,0,0,.4); }
+    dialog h2 { margin-top: 0; }
   </style>
 </head>
 <body>
@@ -55,6 +62,18 @@
     </div>
     <div id="lijst"></div>
   </main>
+
+  <dialog id="dlg">
+    <form id="dlg-form" method="dialog" novalidate>
+      <h2 id="dlg-titel"></h2>
+      <div id="dlg-velden"></div>
+      <div id="dlg-melding"></div>
+      <div class="acties">
+        <button type="button" class="knop-secundair" id="dlg-annuleer">Annuleren</button>
+        <button type="submit" class="knop-primair">Opslaan</button>
+      </div>
+    </form>
+  </dialog>
 </div>
 
 <script>
@@ -129,12 +148,19 @@
             <div class="meta">${esc(i.email)} · ${esc(i.telefoon)} · ingeschreven ${datum(i.aangemaakt_op)}
               · mail ${i.bevestiging_verstuurd_op ? 'verstuurd' : 'nog niet verstuurd'}</div>
           </div>
-          <label class="betaald-vink"><input type="checkbox" data-id="${i.id}" ${i.betaald ? 'checked' : ''}> Betaald</label>
+          <div class="knoppen">
+            <label class="betaald-vink"><input type="checkbox" data-id="${i.id}" ${i.betaald ? 'checked' : ''}> Betaald</label>
+            <button class="knop-secundair klein" data-actie="wijzig-contact" data-insc="${i.id}">Bewerken</button>
+            <button class="knop-secundair klein" data-actie="nieuwe-persoon" data-insc="${i.id}">+ Persoon</button>
+            <button class="knop-gevaar klein" data-actie="verwijder-insc" data-insc="${i.id}">Verwijderen</button>
+          </div>
         </div>
         <table class="lijst">
-          <tr><th>Naam</th><th>Geboortedatum</th><th>Team</th><th>Tarief</th></tr>
+          <tr><th>Naam</th><th>Geboortedatum</th><th>Team</th><th>Tarief</th><th></th></tr>
           ${i.deelnemers.map(d => `<tr><td>${esc(d.voornaam)} ${esc(d.achternaam)}</td><td>${gebdatum(d.geboortedatum)}</td>
-            <td>${esc(d.team)}</td><td>${esc(d.categorie)} (${euro(d.prijs)})</td></tr>`).join('')}
+            <td>${esc(d.team)}</td><td>${esc(d.categorie)} (${euro(d.prijs)})</td>
+            <td class="acties-cel"><button class="knop-secundair klein" data-actie="wijzig-persoon" data-insc="${i.id}" data-dln="${d.id}">Bewerken</button>
+              <button class="knop-gevaar klein" data-actie="verwijder-persoon" data-insc="${i.id}" data-dln="${d.id}">Verwijderen</button></td></tr>`).join('')}
         </table>
       </div>`).join('') || '<p>Geen inschrijvingen gevonden.</p>';
   }
@@ -149,6 +175,88 @@
       const i = data.find(x => x.id === cb.dataset.id); i.betaald = cb.checked;
       teken();
     } catch (err) { alert(err.message); cb.checked = !cb.checked; cb.disabled = false; }
+  });
+
+  // ---------- bewerken / verwijderen ----------
+  let TEAMS = [];
+  rpc('teams').then(t => { if (Array.isArray(t)) TEAMS = t; }).catch(() => {});
+
+  const dlg = $('#dlg');
+  let opslaan = null;
+  function veld(id, label, waarde, type = 'text', verplicht = true) {
+    return `<div class="veld"><label for="${id}">${label}</label>
+      <input id="${id}" type="${type}" value="${esc(waarde)}" ${verplicht ? 'required' : ''}></div>`;
+  }
+  function open(titel, velden, actie) {
+    $('#dlg-titel').textContent = titel;
+    $('#dlg-velden').innerHTML = velden;
+    $('#dlg-melding').innerHTML = '';
+    opslaan = actie;
+    dlg.showModal();
+  }
+  $('#dlg-annuleer').addEventListener('click', () => dlg.close());
+  $('#dlg-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const leeg = [...$('#dlg-velden').querySelectorAll('[required]')].filter(x => !x.value.trim());
+    leeg.forEach(x => x.classList.add('ongeldig'));
+    if (leeg.length) return;
+    try {
+      const res = await opslaan();
+      if (!res.ok) throw new Error(res.fout || 'Opslaan mislukt');
+      dlg.close();
+      await laad();
+    } catch (err) { $('#dlg-melding').innerHTML = `<div class="melding fout">${esc(err.message)}</div>`; }
+  });
+  const v = (id) => $('#' + id).value.trim();
+
+  function persoonVelden(d = {}) {
+    return `<div class="rij twee">${veld('p-vn', 'Voornaam', d.voornaam || '')}${veld('p-an', 'Achternaam', d.achternaam || '')}</div>
+      <div class="rij twee">${veld('p-gd', 'Geboortedatum', d.geboortedatum || '', 'date')}
+      <div class="veld"><label for="p-tm">Team</label><select id="p-tm" required><option value="">Kies een team</option>
+        ${TEAMS.map(t => `<option ${t === d.team ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div></div>`;
+  }
+  const persoonData = () => ({ voornaam: v('p-vn'), achternaam: v('p-an'), geboortedatum: v('p-gd'), team: v('p-tm') });
+
+  $('#lijst').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-actie]');
+    if (!b) return;
+    const i = data.find(x => x.id === b.dataset.insc);
+    const d = i && i.deelnemers.find(x => x.id === b.dataset.dln);
+    try {
+      switch (b.dataset.actie) {
+        case 'wijzig-contact':
+          open(`Contactpersoon ${i.referentie}`,
+            `<div class="rij twee">${veld('c-vn', 'Voornaam', i.voornaam)}${veld('c-tv', 'Tussenvoegsel', i.tussenvoegsel || '', 'text', false)}</div>
+             ${veld('c-an', 'Achternaam', i.achternaam)}
+             <div class="rij twee">${veld('c-em', 'E-mailadres', i.email, 'email')}${veld('c-tel', 'Telefoon', i.telefoon, 'tel')}</div>`,
+            () => rpc('beheer_wijzig_inschrijving', { wachtwoord: ww, inschrijving: i.id,
+              contact: { voornaam: v('c-vn'), tussenvoegsel: v('c-tv'), achternaam: v('c-an'), email: v('c-em'), telefoon: v('c-tel') } }));
+          break;
+        case 'nieuwe-persoon':
+          open(`Persoon toevoegen aan ${i.referentie}`, persoonVelden(),
+            () => rpc('beheer_bewaar_deelnemer', { wachtwoord: ww, inschrijving: i.id, deelnemer: null, gegevens: persoonData() }));
+          break;
+        case 'wijzig-persoon':
+          open(`${d.voornaam} ${d.achternaam} bewerken`, persoonVelden(d),
+            () => rpc('beheer_bewaar_deelnemer', { wachtwoord: ww, inschrijving: i.id, deelnemer: d.id, gegevens: persoonData() }));
+          break;
+        case 'verwijder-persoon': {
+          const laatste = i.deelnemers.length === 1;
+          if (!confirm(`${d.voornaam} ${d.achternaam} verwijderen?` + (laatste ? '\n\nDit is de laatste persoon: de hele inschrijving wordt verwijderd.' : ''))) return;
+          const res = await rpc('beheer_verwijder_deelnemer', { wachtwoord: ww, deelnemer: d.id });
+          if (!res.ok) throw new Error(res.fout);
+          await laad();
+          break;
+        }
+        case 'verwijder-insc': {
+          if (!confirm(`Inschrijving ${i.referentie} van ${naam(i)} (${i.deelnemers.length} personen) verwijderen?\n\nDit kan niet ongedaan worden gemaakt.`)) return;
+          const res = await rpc('beheer_verwijder_inschrijving', { wachtwoord: ww, inschrijving: i.id });
+          if (!res.ok) throw new Error(res.fout);
+          await laad();
+          break;
+        }
+      }
+    } catch (err) { alert(err.message); }
   });
 
   ['input', 'change'].forEach(ev => {

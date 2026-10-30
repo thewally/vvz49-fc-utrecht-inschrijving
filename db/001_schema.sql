@@ -231,6 +231,7 @@ begin
       'bevestiging_verstuurd_op', i.bevestiging_verstuurd_op,
       'deelnemers', coalesce((
         select jsonb_agg(jsonb_build_object(
+          'id', d.id,
           'voornaam', d.voornaam,
           'achternaam', d.achternaam,
           'geboortedatum', d.geboortedatum,
@@ -259,6 +260,118 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------
+-- Beheer: wijzigen en verwijderen
+-- ---------------------------------------------------------------
+create or replace function public.vvz_herbereken(p_inschrijving uuid)
+returns void language sql security definer set search_path = public, pg_temp as $$
+  update inschrijvingen
+     set totaal_bedrag = coalesce((select sum(prijs) from deelnemers where inschrijving_id = p_inschrijving), 0)
+   where id = p_inschrijving
+$$;
+
+create or replace function public.beheer_wijzig_inschrijving(wachtwoord text, inschrijving uuid, contact jsonb)
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if not beheer_check(wachtwoord) then
+    return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
+  end if;
+  if coalesce(trim(contact->>'voornaam'), '') = '' or coalesce(trim(contact->>'achternaam'), '') = ''
+     or coalesce(trim(contact->>'email'), '') = '' or coalesce(trim(contact->>'telefoon'), '') = '' then
+    return jsonb_build_object('ok', false, 'fout', 'Voornaam, achternaam, e-mail en telefoon zijn verplicht.');
+  end if;
+  update inschrijvingen set
+    voornaam      = left(trim(contact->>'voornaam'), 100),
+    tussenvoegsel = nullif(left(trim(coalesce(contact->>'tussenvoegsel', '')), 30), ''),
+    achternaam    = left(trim(contact->>'achternaam'), 100),
+    email         = lower(left(trim(contact->>'email'), 200)),
+    telefoon      = left(trim(contact->>'telefoon'), 30)
+  where id = inschrijving;
+  return jsonb_build_object('ok', found);
+end $$;
+
+create or replace function public.beheer_verwijder_inschrijving(wachtwoord text, inschrijving uuid)
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if not beheer_check(wachtwoord) then
+    return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
+  end if;
+  delete from inschrijvingen where id = inschrijving;
+  return jsonb_build_object('ok', found);
+end $$;
+
+-- Persoon toevoegen (deelnemer = null) of wijzigen (deelnemer = id)
+create or replace function public.beheer_bewaar_deelnemer(wachtwoord text, inschrijving uuid, deelnemer uuid, gegevens jsonb)
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_geb  date;
+  v_cat  text;
+  v_insc uuid := inschrijving;
+begin
+  if not beheer_check(wachtwoord) then
+    return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
+  end if;
+  begin
+    v_geb := (gegevens->>'geboortedatum')::date;
+  exception when others then
+    return jsonb_build_object('ok', false, 'fout', 'Ongeldige geboortedatum.');
+  end;
+  if v_geb is null or v_geb > date '2026-12-12' or v_geb < date '1900-01-01' then
+    return jsonb_build_object('ok', false, 'fout', 'Ongeldige geboortedatum.');
+  end if;
+  if coalesce(trim(gegevens->>'voornaam'), '') = '' or coalesce(trim(gegevens->>'achternaam'), '') = '' then
+    return jsonb_build_object('ok', false, 'fout', 'Voor- en achternaam zijn verplicht.');
+  end if;
+  if not exists (select 1 from teams where naam = gegevens->>'team') then
+    return jsonb_build_object('ok', false, 'fout', 'Kies een geldig team.');
+  end if;
+  v_cat := vvz_categorie(v_geb);
+
+  if deelnemer is null then
+    insert into deelnemers (inschrijving_id, voornaam, achternaam, geboortedatum, team, categorie, prijs)
+    values (v_insc, left(trim(gegevens->>'voornaam'), 100), left(trim(gegevens->>'achternaam'), 100),
+            v_geb, gegevens->>'team', v_cat, vvz_prijs(v_cat));
+  else
+    update deelnemers set
+      voornaam = left(trim(gegevens->>'voornaam'), 100),
+      achternaam = left(trim(gegevens->>'achternaam'), 100),
+      geboortedatum = v_geb, team = gegevens->>'team',
+      categorie = v_cat, prijs = vvz_prijs(v_cat)
+    where id = deelnemer
+    returning inschrijving_id into v_insc;
+    if v_insc is null then
+      return jsonb_build_object('ok', false, 'fout', 'Persoon niet gevonden.');
+    end if;
+  end if;
+
+  perform vvz_herbereken(v_insc);
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- Persoon verwijderen; is het de laatste, dan verdwijnt de hele inschrijving
+create or replace function public.beheer_verwijder_deelnemer(wachtwoord text, deelnemer uuid)
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_insc uuid;
+begin
+  if not beheer_check(wachtwoord) then
+    return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
+  end if;
+  delete from deelnemers where id = deelnemer returning inschrijving_id into v_insc;
+  if v_insc is null then
+    return jsonb_build_object('ok', false, 'fout', 'Persoon niet gevonden.');
+  end if;
+  if not exists (select 1 from deelnemers where inschrijving_id = v_insc) then
+    delete from inschrijvingen where id = v_insc;
+  else
+    perform vvz_herbereken(v_insc);
+  end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- ---------------------------------------------------------------
 -- Rechten: publiek mag alléén de functies hierboven aanroepen
 -- ---------------------------------------------------------------
 revoke all on all tables in schema public from public;
@@ -274,7 +387,11 @@ begin
       public.teams(),
       public.registreer(jsonb, jsonb),
       public.beheer_overzicht(text),
-      public.beheer_zet_betaald(text, uuid, boolean)
+      public.beheer_zet_betaald(text, uuid, boolean),
+      public.beheer_wijzig_inschrijving(text, uuid, jsonb),
+      public.beheer_verwijder_inschrijving(text, uuid),
+      public.beheer_bewaar_deelnemer(text, uuid, uuid, jsonb),
+      public.beheer_verwijder_deelnemer(text, uuid)
     to anonymous;
   else
     raise notice 'Rol "anonymous" bestaat nog niet: zet eerst de Data API aan en draai de migratie opnieuw.';
@@ -289,7 +406,11 @@ begin
       public.teams(),
       public.registreer(jsonb, jsonb),
       public.beheer_overzicht(text),
-      public.beheer_zet_betaald(text, uuid, boolean)
+      public.beheer_zet_betaald(text, uuid, boolean),
+      public.beheer_wijzig_inschrijving(text, uuid, jsonb),
+      public.beheer_verwijder_inschrijving(text, uuid),
+      public.beheer_bewaar_deelnemer(text, uuid, uuid, jsonb),
+      public.beheer_verwijder_deelnemer(text, uuid)
     to authenticated;
   end if;
 end $$;
