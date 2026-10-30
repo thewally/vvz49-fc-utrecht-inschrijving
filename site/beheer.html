@@ -165,7 +165,6 @@
               · bevestiging ${i.bevestiging_verstuurd_op ? 'verstuurd' : 'nog niet verstuurd'}</div>
           </div>
           <div class="knoppen">
-            <label class="betaald-vink"><input type="checkbox" data-id="${i.id}" ${i.betaald ? 'checked' : ''}> Inschrijving betaald (${euro(i.inschrijf_bedrag)})</label>
             <button class="knop-secundair klein" data-actie="wijzig-contact" data-insc="${i.id}">Contactpersoon wijzigen</button>
             <button class="knop-secundair klein" data-actie="nieuwe-persoon" data-insc="${i.id}">+ Persoon</button>
             <button class="knop-gevaar klein" data-actie="verwijder-insc" data-insc="${i.id}">Verwijderen</button>
@@ -177,7 +176,7 @@
             <td>${esc(d.team)}</td><td>${esc(d.categorie)} (${euro(d.prijs)})</td>
             <td class="acties-cel"><button class="knop-gevaar klein" data-actie="verwijder-persoon" data-insc="${i.id}" data-dln="${d.id}">Verwijderen</button></td></tr>`).join('')}
         </table>
-        ${wijzTabel(i.wijzigingen)}
+        ${wijzTabel(i.wijzigingen, i)}
       </div>`).join('') || '<p>Geen inschrijvingen gevonden.</p>';
 
     $('#verw-sectie').classList.toggle('verborgen', !verwijderd.length);
@@ -210,11 +209,20 @@
       ${label}</label>${w.afgehandeld_op ? ` <span class="samenvatting">${datum(w.afgehandeld_op)}</span>` : ''}`;
   }
 
-  function wijzTabel(lijst) {
-    if (!lijst || !lijst.length) return '';
+  function wijzTabel(lijst, i) {
+    lijst = lijst || [];
+    if (!lijst.length && !i) return '';
+    const initieel = i ? `<tr>
+        <td>${datum(i.aangemaakt_op)}</td>
+        <td>Initiële inschrijving</td>
+        <td>Ontvangen ${euro(i.inschrijf_bedrag)}</td>
+        <td><label class="taak ${i.betaald ? '' : 'open-taak'}"><input type="checkbox" data-id="${i.id}" ${i.betaald ? 'checked' : ''}> Betaald</label>${i.betaald_op ? ` <span class="samenvatting">${datum(i.betaald_op)}</span>` : ''}</td>
+        <td>${i.bevestiging_verstuurd_op ? 'verstuurd' : 'in wachtrij'}</td>
+      </tr>` : '';
     const soortTekst = { persoon_toegevoegd: 'Ontvangen', persoon_verwijderd: 'Terugstorten', inschrijving_verwijderd: 'Terugstorten' };
-    return `<table class="lijst wijz"><caption>Wijzigingen</caption>
-      <tr><th>Datum</th><th>Wijziging</th><th>Bedrag</th><th>Actie</th><th>Mail</th></tr>
+    return `<table class="lijst wijz"><caption>Acties</caption>
+      <tr><th>Datum</th><th>Beschrijving</th><th>Bedrag</th><th>Actie</th><th>Mail</th></tr>
+      ${initieel}
       ${lijst.map(w => `<tr>
         <td>${datum(w.aangemaakt_op)}</td>
         <td class="${w.vervallen ? 'vervallen' : ''}">${esc(w.toelichting)}</td>
