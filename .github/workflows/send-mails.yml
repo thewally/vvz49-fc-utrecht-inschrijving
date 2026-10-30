@@ -3,6 +3,9 @@ name: Bevestigingsmails versturen
 on:
   schedule:
     - cron: '*/5 * * * *'   # elke 5 minuten (GitHub kan dit wat vertragen)
+  push:
+    branches: [main]
+    paths: ['scripts/send-confirmations.mjs', '.github/workflows/send-mails.yml']
   workflow_dispatch:
 
 concurrency:
