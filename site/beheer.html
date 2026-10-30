@@ -219,13 +219,9 @@
   const persoonData = () => ({ voornaam: v('p-vn'), achternaam: v('p-an'), geboortedatum: v('p-gd'), team: v('p-tm') });
 
   function terugstortMelding(i, bedrag) {
-    alert(`Er is al betaald. Stort ${euro(bedrag)} handmatig terug.
-
-` +
-      `Contactpersoon: ${naam(i)}
-E-mail: ${i.email}
-Telefoon: ${i.telefoon}
-Referentie: ${i.referentie}`);
+    alert(`Er is al betaald. Stort ${euro(bedrag)} handmatig terug.\n` +
+      `${i.voornaam} krijgt een mail dat het bedrag in overleg wordt teruggestort.\n\n` +
+      `Contactpersoon: ${naam(i)}\nE-mail: ${i.email}\nTelefoon: ${i.telefoon}\nReferentie: ${i.referentie}`);
   }
 
   $('#lijst').addEventListener('click', async (e) => {

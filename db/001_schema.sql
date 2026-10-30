@@ -62,6 +62,21 @@ create table if not exists betaalverzoeken (
 );
 alter table betaalverzoeken enable row level security;
 
+-- Meldingen bij verwijderen (los van de inschrijving, want die kan weg zijn)
+create table if not exists meldingen (
+  id             uuid primary key default gen_random_uuid(),
+  soort          text not null check (soort in ('inschrijving_verwijderd', 'persoon_verwijderd')),
+  email          text not null,
+  voornaam       text not null,
+  referentie     text not null,
+  toelichting    text,
+  nieuw_totaal   numeric(8,2),
+  terug          numeric(8,2) not null default 0,
+  aangemaakt_op  timestamptz not null default now(),
+  verstuurd_op   timestamptz
+);
+alter table meldingen enable row level security;
+
 create table if not exists beheer_instellingen (
   sleutel  text primary key,
   waarde   text not null
@@ -370,13 +385,15 @@ returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   v_insc   uuid;
+  v_naam   text;
   v_i      inschrijvingen%rowtype;
   v_terug  numeric(8,2) := 0;
 begin
   if not beheer_check(wachtwoord) then
     return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
   end if;
-  delete from deelnemers where id = deelnemer returning inschrijving_id into v_insc;
+  delete from deelnemers where id = deelnemer
+    returning inschrijving_id, voornaam || ' ' || achternaam into v_insc, v_naam;
   if v_insc is null then
     return jsonb_build_object('ok', false, 'fout', 'Persoon niet gevonden.');
   end if;
@@ -384,6 +401,8 @@ begin
   if not exists (select 1 from deelnemers where inschrijving_id = v_insc) then
     select * into v_i from inschrijvingen where id = v_insc;
     v_terug := v_i.betaald_bedrag;
+    insert into meldingen (soort, email, voornaam, referentie, toelichting, terug)
+    values ('inschrijving_verwijderd', v_i.email, v_i.voornaam, v_i.referentie, 'Verwijderd: ' || v_naam, v_terug);
     delete from inschrijvingen where id = v_insc;
     return jsonb_build_object('ok', true, 'inschrijving_verwijderd', true, 'terug', v_terug);
   end if;
@@ -395,22 +414,26 @@ begin
      set betaald_bedrag = least(betaald_bedrag, totaal_bedrag),
          betaald = (least(betaald_bedrag, totaal_bedrag) >= totaal_bedrag and betaald_bedrag > 0)
    where id = v_insc;
+  insert into meldingen (soort, email, voornaam, referentie, toelichting, nieuw_totaal, terug)
+  values ('persoon_verwijderd', v_i.email, v_i.voornaam, v_i.referentie, 'Verwijderd: ' || v_naam, v_i.totaal_bedrag, v_terug);
   return jsonb_build_object('ok', true, 'inschrijving_verwijderd', false, 'terug', v_terug);
 end $$;
 
 create or replace function public.beheer_verwijder_inschrijving(wachtwoord text, inschrijving uuid)
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare v_terug numeric(8,2);
+declare v_i inschrijvingen%rowtype;
 begin
   if not beheer_check(wachtwoord) then
     return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
   end if;
-  delete from inschrijvingen where id = inschrijving returning betaald_bedrag into v_terug;
-  if not found then
+  delete from inschrijvingen where id = inschrijving returning * into v_i;
+  if v_i.id is null then
     return jsonb_build_object('ok', false, 'fout', 'Inschrijving niet gevonden.');
   end if;
-  return jsonb_build_object('ok', true, 'terug', v_terug);
+  insert into meldingen (soort, email, voornaam, referentie, terug)
+  values ('inschrijving_verwijderd', v_i.email, v_i.voornaam, v_i.referentie, v_i.betaald_bedrag);
+  return jsonb_build_object('ok', true, 'terug', v_i.betaald_bedrag);
 end $$;
 
 -- ---------------------------------------------------------------

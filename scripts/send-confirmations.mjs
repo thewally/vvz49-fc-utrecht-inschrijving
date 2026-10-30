@@ -157,5 +157,52 @@ for (const v of verzoeken) {
   }
 }
 
+// ---------- meldingen bij verwijderen ----------
+function meldingMail(m) {
+  const terug = Number(m.terug) > 0
+    ? (m.soort === 'persoon_verwijderd'
+        ? `Je hebt ${euro(m.terug)} te veel betaald. Dit bedrag wordt in overleg teruggestort.`
+        : `Je hebt al ${euro(m.terug)} betaald. Dit bedrag wordt in overleg teruggestort.`)
+    : '';
+  const isInsc = m.soort === 'inschrijving_verwijderd';
+  const kop = isInsc ? 'Inschrijving verwijderd' : 'Inschrijving aangepast';
+  const regels = isInsc
+    ? [`Je inschrijving ${m.referentie} voor ${WEDSTRIJD} (${DATUM}) is verwijderd.`]
+    : [`Je inschrijving ${m.referentie} voor ${WEDSTRIJD} (${DATUM}) is aangepast.`,
+       m.toelichting, `Het nieuwe totaal van je inschrijving is ${euro(m.nieuw_totaal)}.`];
+  if (terug) regels.push(terug);
+  regels.push('Heb je vragen? Beantwoord dan deze mail.');
+  const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;color:#1f2a1f">
+  <h2 style="color:#1B5E20">${kop}</h2>
+  <p>Beste ${esc(m.voornaam)},</p>
+  ${regels.map(r => `<p>${esc(r)}</p>`).join('')}
+  <p>Sportieve groet,<br>VVZ'49</p>
+</div>`;
+  const text = `Beste ${m.voornaam},\n\n${regels.join('\n\n')}\n\nSportieve groet,\nVVZ'49`;
+  return { kop, html, text };
+}
+
+const { rows: meldingen } = await db.query(
+  `select * from meldingen where verstuurd_op is null order by aangemaakt_op limit 50`);
+console.log(`${meldingen.length} nieuwe melding(en)`);
+for (const m of meldingen) {
+  const { kop, html, text } = meldingMail(m);
+  try {
+    await transport.sendMail({
+      from: `"${MAIL_FROM_NAME}" <${GMAIL_USER}>`,
+      to: m.email,
+      replyTo: MAIL_REPLY_TO || GMAIL_USER,
+      subject: `${kop}: ${WEDSTRIJD} (${m.referentie})`,
+      html, text,
+    });
+    await db.query(`update meldingen set verstuurd_op = now() where id = $1`, [m.id]);
+    console.log(`Melding verstuurd: ${m.soort} ${m.referentie}`);
+  } catch (err) {
+    fouten++;
+    console.error(`Melding mislukt: ${m.referentie}: ${err.message}`);
+  }
+}
+
 await db.end();
 if (fouten) process.exit(1);
