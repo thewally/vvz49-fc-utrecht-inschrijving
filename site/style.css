@@ -80,3 +80,4 @@ table.spec tr.totaal td { font-weight: 700; border-bottom: none; border-top: 2px
 .wedstrijd img { width: 56px; height: 56px; object-fit: contain; flex-shrink: 0; }
 header.kop .wedstrijd h1 { margin: 0; }
 @media (max-width: 420px) { .wedstrijd img { width: 40px; height: 40px; } .wedstrijd { gap: 10px; } header.kop .wedstrijd h1 { font-size: 1.2rem; } }
+.intro ul { margin: 0 0 0 1.2em; padding: 0; }
