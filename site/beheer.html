@@ -21,6 +21,11 @@
     .inschr.open { border-left: 6px solid #f9a825; }
     .inschr-kop { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
     .inschr-kop .meta { font-size: .85rem; color: var(--grijs); }
+    .kop-titel { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+    .klap { background: none; border: none; padding: 0 2px; font-size: 1rem; line-height: 1.5; color: var(--groen-donker); cursor: pointer; transition: transform .15s; }
+    .inschr.dicht .klap { transform: rotate(-90deg); }
+    .inschr.dicht { padding-top: 8px; padding-bottom: 8px; margin-bottom: 6px; }
+    .inschr.dicht .meta, .inschr.dicht .knoppen, .inschr.dicht table { display: none; }
     .betaald-vink { display: flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; }
     .betaald-vink input { width: 20px; height: 20px; accent-color: var(--groen); }
     table.lijst { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: .9rem; }
@@ -65,6 +70,7 @@
       <select id="filter-team"><option value="">Alle teams</option></select>
       <button class="knop-secundair" id="ververs">Verversen</button>
       <button class="knop-secundair" id="export">CSV-export</button>
+      <button class="knop-secundair" id="klap-alles">Alles inklappen</button>
     </div>
     <div id="lijst"></div>
     <section id="verw-sectie" class="verborgen">
@@ -98,6 +104,14 @@
   let ww = sessionStorageGet();
   let data = [];
   let verwijderd = [];
+
+  // ---------- in-/uitklappen (onthouden in deze browser) ----------
+  let klap = { standaardDicht: false, staat: {} };
+  try { klap = JSON.parse(localStorage.getItem('vvz_klap')) || klap; } catch {}
+  const bewaarKlap = () => { try { localStorage.setItem('vvz_klap', JSON.stringify(klap)); } catch {} };
+  const isDicht = (k) => (k in klap.staat ? klap.staat[k] : klap.standaardDicht);
+  const knopTekst = () => { $('#klap-alles').textContent = klap.standaardDicht ? 'Alles uitklappen' : 'Alles inklappen'; };
+  const klapKnop = (k) => `<button class="klap" type="button" data-klap="${k}" aria-label="In- of uitklappen">▾</button>`;
 
   $('#sub').textContent = `${C.WEDSTRIJD} · ${C.DATUM_TEKST}`;
 
@@ -157,13 +171,13 @@
         .join(' ').toLowerCase().includes(zoek)));
 
     $('#lijst').innerHTML = zicht.map(i => `
-      <div class="inschr ${heeftOpen(i) ? 'open' : 'betaald'}">
+      <div class="inschr ${heeftOpen(i) ? 'open' : 'betaald'} ${isDicht(i.id) ? 'dicht' : ''}" data-sleutel="${i.id}">
         <div class="inschr-kop">
-          <div>
+          <div class="kop-titel" data-klap="${i.id}">${klapKnop(i.id)}<div>
             <strong>${esc(naam(i))}</strong> · ${esc(i.referentie)} · <strong>${euro(i.totaal_bedrag)}</strong>
             <div class="meta">${esc(i.email)} · ${esc(i.telefoon)} · ingeschreven ${datum(i.aangemaakt_op)}
               · bevestiging ${i.bevestiging_verstuurd_op ? 'verstuurd' : 'nog niet verstuurd'}</div>
-          </div>
+          </div></div>
           <div class="knoppen">
             <button class="knop-secundair klein" data-actie="wijzig-contact" data-insc="${i.id}">Contactpersoon wijzigen</button>
             <button class="knop-secundair klein" data-actie="nieuwe-persoon" data-insc="${i.id}">+ Deelnemer</button>
@@ -192,12 +206,14 @@
       ws.sort((a, b) => a.aangemaakt_op.localeCompare(b.aangemaakt_op));
       const w = ws[ws.length - 1];
       const open = ws.some(x => x.taak && !x.afgehandeld && !x.vervallen);
+      const terug = ws.filter(x => x.taak === 'terugstorten' && !x.afgehandeld && !x.vervallen).reduce((s, x) => s + Number(x.bedrag), 0);
+      const k = 'v-' + w.referentie;
       return `
-      <div class="inschr ${open ? 'open' : 'betaald'}">
-        <div class="inschr-kop"><div>
-          <strong>${esc(w.contact_naam)}</strong> · ${esc(w.referentie)}
+      <div class="inschr ${open ? 'open' : 'betaald'} ${isDicht(k) ? 'dicht' : ''}" data-sleutel="${k}">
+        <div class="inschr-kop"><div class="kop-titel" data-klap="${k}">${klapKnop(k)}<div>
+          <strong>${esc(w.contact_naam)}</strong> · ${esc(w.referentie)}${terug ? ` · <strong>terug ${euro(terug)}</strong>` : ''}
           <div class="meta">${esc(w.email)}${w.telefoon ? ' · ' + esc(w.telefoon) : ''}</div>
-        </div></div>
+        </div></div></div>
         ${wijzTabel(ws)}
       </div>`; }).join('');
   }
@@ -352,6 +368,21 @@
     $('#filter-betaald').addEventListener(ev, teken);
     $('#filter-team').addEventListener(ev, teken);
   });
+  $('#beheer').addEventListener('click', (e) => {
+    const t = e.target.closest('[data-klap]');
+    if (!t || e.target.closest('button:not(.klap), a, input, label')) return;
+    const kaart = t.closest('.inschr'), k = kaart.dataset.sleutel;
+    const dicht = !kaart.classList.contains('dicht');
+    kaart.classList.toggle('dicht', dicht);
+    klap.staat[k] = dicht;
+    bewaarKlap();
+  });
+  $('#klap-alles').addEventListener('click', () => {
+    klap = { standaardDicht: !klap.standaardDicht, staat: {} };
+    bewaarKlap(); knopTekst(); teken();
+  });
+  knopTekst();
+
   $('#ververs').addEventListener('click', () => laad().catch(err => alert(err.message)));
 
   $('#export').addEventListener('click', () => {
