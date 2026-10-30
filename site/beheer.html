@@ -174,7 +174,7 @@
       <div class="inschr ${heeftOpen(i) ? 'open' : 'betaald'} ${isDicht(i.id) ? 'dicht' : ''}" data-sleutel="${i.id}">
         <div class="inschr-kop">
           <div class="kop-titel" data-klap="${i.id}">${klapKnop(i.id)}<div>
-            <strong>${esc(naam(i))}</strong> · ${esc(i.referentie)} · <strong>${euro(i.totaal_bedrag)}</strong>
+            <strong>${esc(naam(i))}</strong> · ${esc(i.referentie)} · <strong>${euro(i.totaal_bedrag)}</strong> · ${i.deelnemers.length} ${i.deelnemers.length === 1 ? 'deelnemer' : 'deelnemers'}
             <div class="meta">${esc(i.email)} · ${esc(i.telefoon)} · ingeschreven ${datum(i.aangemaakt_op)}
               · bevestiging ${i.bevestiging_verstuurd_op ? 'verstuurd' : 'nog niet verstuurd'}</div>
           </div></div>
