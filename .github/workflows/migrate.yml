@@ -1,0 +1,35 @@
+name: Database migreren
+
+on:
+  push:
+    branches: [main]
+    paths: ['db/**', '.github/workflows/migrate.yml']
+  workflow_dispatch:
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+      BEHEER_WACHTWOORD: ${{ secrets.BEHEER_WACHTWOORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Postgres-client installeren
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Migraties uitvoeren
+        run: |
+          for f in db/*.sql; do
+            echo "==> $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+
+      - name: Beheerwachtwoord instellen
+        if: env.BEHEER_WACHTWOORD != ''
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -v ww="$BEHEER_WACHTWOORD" <<'SQL'
+          insert into beheer_instellingen (sleutel, waarde)
+          values ('wachtwoord_hash', crypt(:'ww', gen_salt('bf', 10)))
+          on conflict (sleutel) do update set waarde = excluded.waarde;
+          SQL

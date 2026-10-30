@@ -1,2 +1,45 @@
-# vvz49-fc-utrecht-inschrijving
-Inschrijfformulier en beheer voor VVZ'49 naar FC Utrecht - Fortuna Sittard (12-12-2026)
+# VVZ'49 – Inschrijving FC Utrecht - Fortuna Sittard
+
+Inschrijfformulier en beheerpagina voor de clubuitje naar **FC Utrecht - Fortuna Sittard** (zaterdag 12 december 2026, 16:15 uur).
+
+- **Formulier:** `https://thewally.github.io/vvz49-fc-utrecht-inschrijving/`
+- **Beheer:** `https://thewally.github.io/vvz49-fc-utrecht-inschrijving/beheer.html`
+
+## Hoe het werkt
+
+| Onderdeel | Wat |
+|---|---|
+| `site/` | Statische site op GitHub Pages (formulier + beheer) |
+| `db/001_schema.sql` | Tabellen, prijslogica en functies in Neon |
+| Neon Data API | De site roept alleen de functies `teams`, `registreer`, `beheer_overzicht` en `beheer_zet_betaald` aan. Tabellen zijn niet direct leesbaar. |
+| `send-mails.yml` | Elke ~5 minuten: bevestigingsmail via Gmail naar nieuwe inschrijvers |
+| `migrate.yml` | Voert de SQL uit en zet het beheerwachtwoord |
+| `deploy-pages.yml` | Publiceert `site/` naar GitHub Pages |
+
+Tarieven: vanaf 16 jaar € 19,50, t/m 15 jaar € 12,50. Leeftijd geteld op 12-12-2026. Het bedrag wordt in de database berekend.
+
+## Eenmalige installatie
+
+1. **Neon**
+   - Maak een project aan op <https://console.neon.tech>.
+   - Zet onder *Data API* de Data API aan (kies Neon Auth als provider; die wordt niet gebruikt, maar maakt de rol `anonymous` aan).
+   - Kopieer de *API URL* naar `DATA_API_URL` in `site/config.js`.
+   - Kopieer de connection string (rol `neondb_owner`) voor de secret hieronder.
+2. **Gmail**: maak een app-wachtwoord aan via <https://myaccount.google.com/apppasswords> (vereist 2-staps­verificatie).
+3. **GitHub Secrets** (*Settings → Secrets and variables → Actions*):
+   - `NEON_DATABASE_URL` – connection string van `neondb_owner`
+   - `BEHEER_WACHTWOORD` – wachtwoord voor de beheerpagina
+   - `GMAIL_USER` – Gmail-adres van de afzender
+   - `GMAIL_APP_PASSWORD` – het app-wachtwoord
+4. **GitHub Pages**: *Settings → Pages → Source: GitHub Actions*.
+5. Start de workflows **Database migreren** en **Deploy naar GitHub Pages** (tab *Actions → Run workflow*).
+
+## Aanpassen
+
+- **Inleidende tekst stap 1:** `site/intro.html`
+- **Prijzen, betaallink, teksten:** `site/config.js` (prijzen ook in `db/001_schema.sql` en de mail in `scripts/send-confirmations.mjs`)
+- **Teams:** de `insert into teams` in `db/001_schema.sql`
+
+## Na afloop (AVG)
+
+Verwijder de gegevens na het evenement, bijvoorbeeld met `delete from inschrijvingen;` in de Neon SQL Editor.

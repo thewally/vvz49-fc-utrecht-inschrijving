@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Beheer inschrijvingen | VVZ'49</title>
+  <link rel="icon" href="https://thewally.github.io/vvz-toolbox/logo-vvz.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="config.js"></script>
+  <style>
+    .kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .kpi div { border: 2px solid var(--groen); border-radius: 8px; padding: 10px 12px; }
+    .kpi span { display: block; font-size: .8rem; color: var(--grijs); }
+    .kpi strong { font-size: 1.3rem; color: var(--groen-donker); }
+    .balk { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; align-items: center; }
+    .balk input, .balk select { width: auto; flex: 1; min-width: 160px; }
+    .inschr { border: 1px solid var(--rand); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+    .inschr.betaald { border-left: 6px solid var(--groen); }
+    .inschr.open { border-left: 6px solid #f9a825; }
+    .inschr-kop { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+    .inschr-kop .meta { font-size: .85rem; color: var(--grijs); }
+    .betaald-vink { display: flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; }
+    .betaald-vink input { width: 20px; height: 20px; accent-color: var(--groen); }
+    table.lijst { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: .9rem; }
+    table.lijst th, table.lijst td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--rand); }
+    table.lijst th { color: var(--grijs); font-weight: 600; }
+    .teams { font-size: .9rem; columns: 3 180px; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+<div class="wrap breed">
+  <header class="kop">
+    <img src="https://thewally.github.io/vvz-toolbox/logo-vvz.png" alt="VVZ'49">
+    <h1>Beheer inschrijvingen</h1>
+    <p id="sub"></p>
+  </header>
+
+  <form id="login" class="wrap" style="padding:0;max-width:360px">
+    <div class="veld"><label for="ww">Wachtwoord</label><input id="ww" type="password" autocomplete="current-password" required></div>
+    <div id="login-melding"></div>
+    <button class="knop-primair" style="width:100%">Inloggen</button>
+  </form>
+
+  <main id="beheer" class="verborgen">
+    <div class="kpi" id="kpi"></div>
+    <details><summary><strong>Aantal per team</strong></summary><div class="teams" id="teams"></div></details>
+    <div class="balk" style="margin-top:16px">
+      <input id="zoek" placeholder="Zoek op naam, e-mail of referentie">
+      <select id="filter-betaald"><option value="">Alle inschrijvingen</option><option value="ja">Betaald</option><option value="nee">Nog niet betaald</option></select>
+      <select id="filter-team"><option value="">Alle teams</option></select>
+      <button class="knop-secundair" id="ververs">Verversen</button>
+      <button class="knop-secundair" id="export">CSV-export</button>
+    </div>
+    <div id="lijst"></div>
+  </main>
+</div>
+
+<script>
+(() => {
+  const C = window.VVZ_CONFIG;
+  const $ = (s, el = document) => el.querySelector(s);
+  const euro = (n) => '€ ' + Number(n).toFixed(2).replace('.', ',');
+  const esc = (s) => String(s ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  const datum = (d) => d ? new Date(d).toLocaleString('nl-NL', { dateStyle: 'short', timeStyle: 'short' }) : '';
+  const gebdatum = (d) => d ? d.split('-').reverse().join('-') : '';
+  const naam = (i) => [i.voornaam, i.tussenvoegsel, i.achternaam].filter(Boolean).join(' ');
+  let ww = sessionStorageGet();
+  let data = [];
+
+  $('#sub').textContent = `${C.WEDSTRIJD} · ${C.DATUM_TEKST}`;
+
+  function sessionStorageGet() { try { return sessionStorage.getItem('vvz_ww') || ''; } catch { return ''; } }
+  function sessionStorageSet(v) { try { v ? sessionStorage.setItem('vvz_ww', v) : sessionStorage.removeItem('vvz_ww'); } catch {} }
+
+  async function rpc(naam, body) {
+    const r = await fetch(`${C.DATA_API_URL}/rpc/${naam}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const res = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((res && res.message) || `Fout ${r.status}`);
+    return res;
+  }
+
+  async function laad() {
+    const res = await rpc('beheer_overzicht', { wachtwoord: ww });
+    if (!res.ok) { sessionStorageSet(''); throw new Error(res.fout); }
+    sessionStorageSet(ww);
+    data = res.inschrijvingen;
+    $('#login').classList.add('verborgen');
+    $('#beheer').classList.remove('verborgen');
+    teken();
+  }
+
+  $('#login').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    ww = $('#ww').value;
+    try { await laad(); } catch (err) { $('#login-melding').innerHTML = `<div class="melding fout">${esc(err.message)}</div>`; }
+  });
+
+  function teken() {
+    const alle = data.flatMap(i => i.deelnemers);
+    const jong = alle.filter(d => d.categorie === 't/m 15').length;
+    const verwacht = data.reduce((s, i) => s + Number(i.totaal_bedrag), 0);
+    const ontvangen = data.filter(i => i.betaald).reduce((s, i) => s + Number(i.totaal_bedrag), 0);
+    $('#kpi').innerHTML = `
+      <div><span>Inschrijvingen</span><strong>${data.length}</strong></div>
+      <div><span>Personen</span><strong>${alle.length}</strong></div>
+      <div><span>t/m 15 / vanaf 16</span><strong>${jong} / ${alle.length - jong}</strong></div>
+      <div><span>Verwacht</span><strong>${euro(verwacht)}</strong></div>
+      <div><span>Betaald</span><strong>${euro(ontvangen)}</strong></div>
+      <div><span>Openstaand</span><strong>${euro(verwacht - ontvangen)}</strong></div>`;
+
+    const perTeam = {};
+    alle.forEach(d => perTeam[d.team] = (perTeam[d.team] || 0) + 1);
+    const teams = Object.keys(perTeam).sort();
+    $('#teams').innerHTML = teams.map(t => `<div>${esc(t)}: <strong>${perTeam[t]}</strong></div>`).join('') || '<p>Nog geen inschrijvingen.</p>';
+    const sel = $('#filter-team'), huidig = sel.value;
+    sel.innerHTML = '<option value="">Alle teams</option>' + teams.map(t => `<option>${esc(t)}</option>`).join('');
+    sel.value = huidig;
+
+    const zoek = $('#zoek').value.trim().toLowerCase();
+    const fb = $('#filter-betaald').value, ft = $('#filter-team').value;
+    const zicht = data.filter(i =>
+      (!fb || (fb === 'ja') === i.betaald) &&
+      (!ft || i.deelnemers.some(d => d.team === ft)) &&
+      (!zoek || [naam(i), i.email, i.referentie, ...i.deelnemers.map(d => d.voornaam + ' ' + d.achternaam)]
+        .join(' ').toLowerCase().includes(zoek)));
+
+    $('#lijst').innerHTML = zicht.map(i => `
+      <div class="inschr ${i.betaald ? 'betaald' : 'open'}">
+        <div class="inschr-kop">
+          <div>
+            <strong>${esc(naam(i))}</strong> · ${esc(i.referentie)} · <strong>${euro(i.totaal_bedrag)}</strong>
+            <div class="meta">${esc(i.email)} · ${esc(i.telefoon)} · ingeschreven ${datum(i.aangemaakt_op)}
+              · mail ${i.bevestiging_verstuurd_op ? 'verstuurd' : 'nog niet verstuurd'}</div>
+          </div>
+          <label class="betaald-vink"><input type="checkbox" data-id="${i.id}" ${i.betaald ? 'checked' : ''}> Betaald</label>
+        </div>
+        <table class="lijst">
+          <tr><th>Naam</th><th>Geboortedatum</th><th>Team</th><th>Tarief</th></tr>
+          ${i.deelnemers.map(d => `<tr><td>${esc(d.voornaam)} ${esc(d.achternaam)}</td><td>${gebdatum(d.geboortedatum)}</td>
+            <td>${esc(d.team)}</td><td>${esc(d.categorie)} (${euro(d.prijs)})</td></tr>`).join('')}
+        </table>
+      </div>`).join('') || '<p>Geen inschrijvingen gevonden.</p>';
+  }
+
+  $('#lijst').addEventListener('change', async (e) => {
+    const cb = e.target.closest('input[type=checkbox][data-id]');
+    if (!cb) return;
+    cb.disabled = true;
+    try {
+      const res = await rpc('beheer_zet_betaald', { wachtwoord: ww, inschrijving: cb.dataset.id, is_betaald: cb.checked });
+      if (!res.ok) throw new Error(res.fout || 'Opslaan mislukt');
+      const i = data.find(x => x.id === cb.dataset.id); i.betaald = cb.checked;
+      teken();
+    } catch (err) { alert(err.message); cb.checked = !cb.checked; cb.disabled = false; }
+  });
+
+  ['input', 'change'].forEach(ev => {
+    $('#zoek').addEventListener(ev, teken);
+    $('#filter-betaald').addEventListener(ev, teken);
+    $('#filter-team').addEventListener(ev, teken);
+  });
+  $('#ververs').addEventListener('click', () => laad().catch(err => alert(err.message)));
+
+  $('#export').addEventListener('click', () => {
+    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const rijen = [['Referentie', 'Contactpersoon', 'E-mail', 'Telefoon', 'Betaald', 'Totaal', 'Voornaam', 'Achternaam', 'Geboortedatum', 'Team', 'Tarief', 'Prijs']];
+    data.forEach(i => i.deelnemers.forEach(d => rijen.push([i.referentie, naam(i), i.email, i.telefoon, i.betaald ? 'ja' : 'nee',
+      String(i.totaal_bedrag).replace('.', ','), d.voornaam, d.achternaam, gebdatum(d.geboortedatum), d.team, d.categorie, String(d.prijs).replace('.', ',')])));
+    const csv = '﻿' + rijen.map(r => r.map(q).join(';')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'inschrijvingen-fc-utrecht.csv';
+    a.click();
+  });
+
+  if (ww) laad().catch(() => {});
+})();
+</script>
+</body>
+</html>

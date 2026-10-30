@@ -1,0 +1,27 @@
+name: Bevestigingsmails versturen
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # elke 5 minuten (GitHub kan dit wat vertragen)
+  workflow_dispatch:
+
+concurrency:
+  group: send-mails
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run send-mails
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME || 'VVZ''49' }}
