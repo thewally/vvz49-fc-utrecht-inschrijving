@@ -6,7 +6,7 @@ window.VVZ_CONFIG = {
   ANON_TOKEN: '__ANON_TOKEN__',
 
   WEDSTRIJD: 'FC Utrecht - Fortuna Sittard',
-  DATUM_TEKST: 'Zaterdag 12 december 2026, 16:15 uur',
+  DATUM_TEKST: 'Zaterdag 12 december 2026, 16:30 uur',
 
   PRIJS_16PLUS: 19.5,
   PRIJS_TM15: 12.5,

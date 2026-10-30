@@ -1,6 +1,6 @@
 # VVZ'49 – Inschrijving FC Utrecht - Fortuna Sittard
 
-Inschrijfformulier en beheerpagina voor de clubuitje naar **FC Utrecht - Fortuna Sittard** (zaterdag 12 december 2026, 16:15 uur).
+Inschrijfformulier en beheerpagina voor de clubuitje naar **FC Utrecht - Fortuna Sittard** (zaterdag 12 december 2026, 16:30 uur).
 
 - **Formulier:** `https://thewally.github.io/vvz49-fc-utrecht-inschrijving/`
 - **Beheer:** `https://thewally.github.io/vvz49-fc-utrecht-inschrijving/beheer.html`

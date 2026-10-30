@@ -9,7 +9,7 @@ const {
 
 const BUNQ = 'https://bunq.me/AvanderWal?amount={bedrag}&description={omschrijving}';
 const WEDSTRIJD = 'FC Utrecht - Fortuna Sittard';
-const DATUM = 'zaterdag 12 december 2026, 16:15 uur';
+const DATUM = 'zaterdag 12 december 2026, 16:30 uur';
 
 const euro = (n) => '€ ' + Number(n).toFixed(2).replace('.', ',');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
