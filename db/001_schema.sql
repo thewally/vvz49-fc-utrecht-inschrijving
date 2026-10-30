@@ -285,3 +285,6 @@ begin
     revoke execute on all functions in schema public from authenticated;
   end if;
 end $$;
+
+-- Data API (PostgREST) de nieuwe functies laten inlezen, i.p.v. handmatig "Refresh schema cache"
+notify pgrst, 'reload schema';
