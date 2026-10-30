@@ -1,4 +1,5 @@
 name: Database migreren
+# Voert db/*.sql uit, zet het beheerwachtwoord en ververst de Data API schema-cache
 
 on:
   push:
