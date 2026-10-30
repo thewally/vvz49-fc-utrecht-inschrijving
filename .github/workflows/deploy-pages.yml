@@ -1,4 +1,5 @@
 name: Deploy naar GitHub Pages
+# Publiceert site/ naar GitHub Pages (Data API URL komt uit de secret NEON_DATA_API_URL)
 
 on:
   push:
