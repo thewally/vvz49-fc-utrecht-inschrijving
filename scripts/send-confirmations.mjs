@@ -34,7 +34,7 @@ function mail(i, deelnemers) {
   <h2 style="color:#1B5E20">Bevestiging inschrijving ${WEDSTRIJD}</h2>
   <p>Beste ${esc(i.voornaam)},</p>
   <p>Bedankt voor je inschrijving voor <strong>${WEDSTRIJD}</strong> op ${DATUM}. Je referentie is <strong>${esc(i.referentie)}</strong>.</p>
-  <h3 style="color:#1B5E20">Ingeschreven personen</h3>
+  <h3 style="color:#1B5E20">Ingeschreven deelnemers</h3>
   <table style="border-collapse:collapse;width:100%">
     ${deelnemers.map(d => `<tr><td style="padding:4px 0;border-bottom:1px solid #ddd">${esc(d.voornaam)} ${esc(d.achternaam)}</td>
       <td style="padding:4px 0;border-bottom:1px solid #ddd">${esc(d.team)}</td></tr>`).join('')}
@@ -55,7 +55,7 @@ function mail(i, deelnemers) {
 Bedankt voor je inschrijving voor ${WEDSTRIJD} op ${DATUM}.
 Referentie: ${i.referentie}
 
-Ingeschreven personen:
+Ingeschreven deelnemers:
 ${deelnemers.map(d => `- ${d.voornaam} ${d.achternaam} (${d.team})`).join('\n')}
 
 Te betalen:

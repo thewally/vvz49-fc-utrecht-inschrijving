@@ -40,7 +40,7 @@
   function nummer() {
     const blokken = $$('#personen .persoon');
     blokken.forEach((b, i) => {
-      $('.persoon-nr', b).textContent = `Persoon ${i + 1}`;
+      $('.persoon-nr', b).textContent = `Deelnemer ${i + 1}`;
       $('.verwijder', b).classList.toggle('verborgen', blokken.length === 1);
     });
   }

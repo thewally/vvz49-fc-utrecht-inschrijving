@@ -165,7 +165,7 @@ begin
   if jsonb_typeof(personen) <> 'array'
      or jsonb_array_length(personen) < 1
      or jsonb_array_length(personen) > 30 then
-    raise exception 'Geef 1 tot 30 personen op.';
+    raise exception 'Geef 1 tot 30 deelnemers op.';
   end if;
 
   if coalesce(trim(contact->>'voornaam'), '') = ''
@@ -211,10 +211,10 @@ begin
       raise exception 'Ongeldige geboortedatum.';
     end if;
     if coalesce(trim(p->>'voornaam'), '') = '' or coalesce(trim(p->>'achternaam'), '') = '' then
-      raise exception 'Vul voor iedere persoon voor- en achternaam in.';
+      raise exception 'Vul voor iedere deelnemer voor- en achternaam in.';
     end if;
     if not exists (select 1 from teams where naam = p->>'team') then
-      raise exception 'Kies voor iedere persoon een team.';
+      raise exception 'Kies voor iedere deelnemer een team.';
     end if;
 
     v_cat := vvz_categorie(v_geb);
@@ -439,7 +439,7 @@ begin
   end if;
   select * into v_d from deelnemers where id = deelnemer;
   if v_d.id is null then
-    return jsonb_build_object('ok', false, 'fout', 'Persoon niet gevonden.');
+    return jsonb_build_object('ok', false, 'fout', 'Deelnemer niet gevonden.');
   end if;
   if (select count(*) from deelnemers where inschrijving_id = v_d.inschrijving_id) = 1 then
     return beheer_verwijder_inschrijving(wachtwoord, v_d.inschrijving_id);
@@ -494,7 +494,7 @@ begin
    where inschrijving_id = v_i.id and taak = 'betalen' and not afgehandeld;
 
   perform vvz_log(v_i.id, 'inschrijving_verwijderd',
-    format('Inschrijving verwijderd (%s personen)', (select count(*) from deelnemers where inschrijving_id = v_i.id)),
+    format('Inschrijving verwijderd (%s deelnemers)', (select count(*) from deelnemers where inschrijving_id = v_i.id)),
     v_terug, case when v_terug > 0 then 'terugstorten' end);
   delete from inschrijvingen where id = v_i.id;
   return jsonb_build_object('ok', true, 'inschrijving_verwijderd', true, 'terug', v_terug);

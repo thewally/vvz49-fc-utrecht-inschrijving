@@ -134,7 +134,7 @@
     const teRug = alleWijz.filter(w => openTaak(w, 'terugstorten')).reduce((s, w) => s + Number(w.bedrag), 0);
     $('#kpi').innerHTML = `
       <div><span>Inschrijvingen</span><strong>${data.length}</strong></div>
-      <div><span>Personen</span><strong>${alle.length}</strong></div>
+      <div><span>Deelnemers</span><strong>${alle.length}</strong></div>
       <div><span>t/m 15 / vanaf 16</span><strong>${jong} / ${alle.length - jong}</strong></div>
       <div><span>Totaal verwacht</span><strong>${euro(verwacht)}</strong></div>
       <div><span>Nog te ontvangen</span><strong>${euro(teOntvangen)}</strong></div>
@@ -166,7 +166,7 @@
           </div>
           <div class="knoppen">
             <button class="knop-secundair klein" data-actie="wijzig-contact" data-insc="${i.id}">Contactpersoon wijzigen</button>
-            <button class="knop-secundair klein" data-actie="nieuwe-persoon" data-insc="${i.id}">+ Persoon</button>
+            <button class="knop-secundair klein" data-actie="nieuwe-persoon" data-insc="${i.id}">+ Deelnemer</button>
             <button class="knop-gevaar klein" data-actie="verwijder-insc" data-insc="${i.id}">Inschrijving verwijderen</button>
           </div>
         </div>
@@ -314,18 +314,18 @@
               contact: { voornaam: v('c-vn'), tussenvoegsel: v('c-tv'), achternaam: v('c-an'), email: v('c-em'), telefoon: v('c-tel') } }));
           break;
         case 'nieuwe-persoon':
-          open(`Persoon toevoegen aan ${i.referentie}`,
-            persoonVelden() + `<p class="samenvatting">Na opslaan krijgt ${esc(naam(i))} automatisch een betaalverzoek per mail voor het bedrag van deze persoon.</p>`,
+          open(`Deelnemer toevoegen aan ${i.referentie}`,
+            persoonVelden() + `<p class="samenvatting">Na opslaan krijgt ${esc(naam(i))} automatisch een betaalverzoek per mail voor het bedrag van deze deelnemer.</p>`,
             async () => {
               const res = await rpc('beheer_voeg_deelnemer_toe', { wachtwoord: ww, inschrijving: i.id, gegevens: persoonData() });
-              if (res.ok) setTimeout(() => alert(`Persoon toegevoegd. Er gaat een betaalverzoek van ${euro(res.bedrag)} naar ${i.email}.`), 50);
+              if (res.ok) setTimeout(() => alert(`Deelnemer toegevoegd. Er gaat een betaalverzoek van ${euro(res.bedrag)} naar ${i.email}.`), 50);
               return res;
             });
           break;
         case 'verwijder-persoon': {
           const laatste = i.deelnemers.length === 1;
           if (!confirm(`${d.voornaam} ${d.achternaam} verwijderen?` +
-            (laatste ? '\n\nDit is de laatste persoon: de hele inschrijving wordt verwijderd.' : '') +
+            (laatste ? '\n\nDit is de laatste deelnemer: de hele inschrijving wordt verwijderd.' : '') +
             '\n\nDe contactpersoon krijgt hierover een mail.')) return;
           const res = await rpc('beheer_verwijder_deelnemer', { wachtwoord: ww, deelnemer: d.id });
           if (!res.ok) throw new Error(res.fout);
@@ -334,7 +334,7 @@
           break;
         }
         case 'verwijder-insc': {
-          if (!confirm(`Inschrijving ${i.referentie} van ${naam(i)} (${i.deelnemers.length} personen) verwijderen?` +
+          if (!confirm(`Inschrijving ${i.referentie} van ${naam(i)} (${i.deelnemers.length} deelnemers) verwijderen?` +
             '\n\nDe contactpersoon krijgt hierover een mail.' +
             '\n\nDit kan niet ongedaan worden gemaakt.')) return;
           const res = await rpc('beheer_verwijder_inschrijving', { wachtwoord: ww, inschrijving: i.id });
