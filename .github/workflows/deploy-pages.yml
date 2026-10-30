@@ -46,7 +46,7 @@ jobs:
       - name: Cache-busting voor scripts en stylesheets
         run: |
           v="${GITHUB_SHA::7}"
-          sed -i -E "s#(src|href)=\"(config|api|app)\.js\"#\1=\"\2.js?v=$v\"#g; s#href=\"style\.css\"#href=\"style.css?v=$v\"#g" site/*.html
+          sed -i -E "s#(src|href)=\"(config|api|app|mail-sjabloon)\.js\"#\1=\"\2.js?v=$v\"#g; s#href=\"style\.css\"#href=\"style.css?v=$v\"#g" site/*.html
           grep -o '[a-z]*\.\(js\|css\)?v=[0-9a-f]*' site/*.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

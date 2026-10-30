@@ -570,6 +570,44 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------
+-- Mailteksten (opgeslagen als JSON {onderwerp, html} onder sleutel mail_<soort>)
+-- ---------------------------------------------------------------
+create or replace function public.beheer_mailteksten(wachtwoord text)
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if not beheer_check(wachtwoord) then
+    return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
+  end if;
+  return jsonb_build_object('ok', true, 'teksten', coalesce((
+    select jsonb_object_agg(substr(sleutel, 6), waarde::jsonb)
+      from beheer_instellingen where sleutel like 'mail\_%'), '{}'::jsonb));
+end $$;
+
+create or replace function public.beheer_zet_mailtekst(wachtwoord text, soort text, onderwerp text, html text)
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if not beheer_check(wachtwoord) then
+    return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
+  end if;
+  if soort not in ('bevestiging', 'persoon_toegevoegd', 'persoon_verwijderd', 'inschrijving_verwijderd') then
+    return jsonb_build_object('ok', false, 'fout', 'Onbekende mailsoort.');
+  end if;
+  if length(coalesce(html, '')) > 20000 or length(coalesce(onderwerp, '')) > 300 then
+    return jsonb_build_object('ok', false, 'fout', 'De tekst is te lang.');
+  end if;
+  if coalesce(trim(html), '') = '' then
+    delete from beheer_instellingen where sleutel = 'mail_' || soort;
+  else
+    insert into beheer_instellingen (sleutel, waarde)
+    values ('mail_' || soort, jsonb_build_object('onderwerp', coalesce(onderwerp, ''), 'html', html)::text)
+    on conflict (sleutel) do update set waarde = excluded.waarde;
+  end if;
+  return jsonb_build_object('ok', true);
+end $$;
+
+-- ---------------------------------------------------------------
 -- Rechten: publiek mag alléén de functies hierboven aanroepen
 -- ---------------------------------------------------------------
 revoke all on all tables in schema public from public;
@@ -593,7 +631,9 @@ begin
       public.beheer_zet_taak(text, uuid, boolean),
       public.formulier_status(),
       public.beheer_zet_sluitdatum(text, timestamptz),
-      public.beheer_zet_intro(text, text)
+      public.beheer_zet_intro(text, text),
+      public.beheer_mailteksten(text),
+      public.beheer_zet_mailtekst(text, text, text, text)
     to anonymous;
   else
     raise notice 'Rol "anonymous" bestaat nog niet: zet eerst de Data API aan en draai de migratie opnieuw.';
@@ -616,7 +656,9 @@ begin
       public.beheer_zet_taak(text, uuid, boolean),
       public.formulier_status(),
       public.beheer_zet_sluitdatum(text, timestamptz),
-      public.beheer_zet_intro(text, text)
+      public.beheer_zet_intro(text, text),
+      public.beheer_mailteksten(text),
+      public.beheer_zet_mailtekst(text, text, text, text)
     to authenticated;
   end if;
 end $$;

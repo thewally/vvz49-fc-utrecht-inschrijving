@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="style.css">
   <script src="config.js"></script>
   <script src="api.js"></script>
+  <script src="mail-sjabloon.js"></script>
   <style>
     .kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
     .kpi div { border: 2px solid var(--groen); border-radius: 8px; padding: 10px 12px; }
@@ -43,6 +44,10 @@
     .sluit input { width: auto; padding: 6px 10px; }
     .intro-bewerk { margin-bottom: 16px; padding: 10px 12px; border: 1px solid var(--rand); border-radius: 8px; }
     .intro-bewerk summary { cursor: pointer; }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+    .chip { font: inherit; font-size: .8rem; padding: 2px 8px; border-radius: 12px; border: 1px solid var(--rand);
+            background: var(--groen-zacht); color: var(--groen-donker); cursor: pointer; }
+    .mail-voorbeeld { border: 1px solid var(--rand); border-radius: 8px; padding: 12px; max-height: 60vh; overflow: auto; }
     .werkbalk { display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0 6px; }
     .werkbalk button { padding: 4px 10px; font-size: .85rem; border: 1px solid var(--groen); background: #fff; color: var(--groen-donker); }
     .werkbalk button:hover { background: var(--groen-zacht); }
@@ -82,7 +87,7 @@
     </div>
     <details class="intro-bewerk" id="intro-bewerk">
       <summary><strong>Inleidende tekst bewerken</strong></summary>
-      <div class="werkbalk" id="werkbalk">
+      <div class="werkbalk">
         <button type="button" data-cmd="bold" title="Vet"><b>B</b></button>
         <button type="button" data-cmd="italic" title="Cursief"><i>I</i></button>
         <button type="button" data-cmd="underline" title="Onderstreept"><u>U</u></button>
@@ -101,6 +106,34 @@
         <button type="button" class="knop-secundair klein" id="intro-herstel">Standaardtekst terugzetten</button>
         <a class="knop-secundair klein" href="./" target="_blank" rel="noopener" style="text-decoration:none">Formulier bekijken</a>
         <span id="intro-status" class="samenvatting"></span>
+      </div>
+    </details>
+    <details class="intro-bewerk" id="mail-bewerk">
+      <summary><strong>Mailteksten bewerken</strong></summary>
+      <div class="rij twee" style="margin-top:12px">
+        <div class="veld"><label for="mail-soort">Mail</label><select id="mail-soort"></select></div>
+        <div class="veld"><label for="mail-onderwerp">Onderwerp</label><input id="mail-onderwerp"></div>
+      </div>
+      <div class="werkbalk">
+        <button type="button" data-cmd="bold" title="Vet"><b>B</b></button>
+        <button type="button" data-cmd="italic" title="Cursief"><i>I</i></button>
+        <button type="button" data-cmd="underline" title="Onderstreept"><u>U</u></button>
+        <button type="button" data-cmd="formatBlock" data-arg="H3" title="Tussenkop">Kop</button>
+        <button type="button" data-cmd="formatBlock" data-arg="P" title="Gewone alinea">¶</button>
+        <button type="button" data-cmd="insertUnorderedList" title="Opsomming">• Lijst</button>
+        <button type="button" data-cmd="insertOrderedList" title="Genummerde lijst">1. Lijst</button>
+        <button type="button" data-cmd="createLink" title="Link">Link</button>
+        <button type="button" data-cmd="removeFormat" title="Opmaak wissen">Wis opmaak</button>
+      </div>
+      <div id="mail-editor" class="editor intro" contenteditable="true"></div>
+      <p class="samenvatting">Klik op een variabele om die in te voegen (in het onderwerp of de tekst, waar je cursor staat):</p>
+      <div id="mail-chips" class="chips"></div>
+      <p class="samenvatting" id="mail-voorwaarden"></p>
+      <div class="knoppen">
+        <button type="button" class="knop-primair klein" id="mail-opslaan">Opslaan</button>
+        <button type="button" class="knop-secundair klein" id="mail-voorbeeld">Voorbeeld</button>
+        <button type="button" class="knop-secundair klein" id="mail-herstel">Standaardtekst terugzetten</button>
+        <span id="mail-status" class="samenvatting"></span>
       </div>
     </details>
     <div class="kpi" id="kpi"></div>
@@ -169,6 +202,7 @@
     verwijderd = res.verwijderd || [];
     laadSluitdatum();
     laadIntro();
+    laadMails();
     $('#login').classList.add('verborgen');
     $('#beheer').classList.remove('verborgen');
     teken();
@@ -482,11 +516,11 @@
       introGeladen = true;
     } catch (err) { $('#intro-status').textContent = err.message; }
   }
-  $('#werkbalk').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
-  $('#werkbalk').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-cmd]');
+  document.addEventListener('mousedown', (e) => { if (e.target.closest('.werkbalk button, .chip')) e.preventDefault(); });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('.werkbalk button[data-cmd]');
     if (!b) return;
-    $('#intro-editor').focus();
+    b.closest('.werkbalk').nextElementSibling.focus();
     const cmd = b.dataset.cmd;
     if (cmd === 'createLink') {
       const url = prompt('Adres van de link (https://…):', 'https://');
@@ -513,6 +547,86 @@
       if (!res.ok) throw new Error(res.fout || 'Mislukt');
       await laadIntro(true);
     } catch (err) { alert(err.message); }
+  });
+
+  // ---------- mailteksten ----------
+  const MS = window.vvzMail.SOORTEN;
+  let mailTeksten = null, laatsteVeld = null;
+  $('#mail-soort').innerHTML = Object.entries(MS).map(([k, v]) => `<option value="${k}">${esc(v.naam)}</option>`).join('');
+  ['#mail-onderwerp', '#mail-editor'].forEach(id => $(id).addEventListener('focus', () => { laatsteVeld = $(id); }));
+
+  function toonMail() {
+    const k = $('#mail-soort').value, s = MS[k], eigen = mailTeksten && mailTeksten[k];
+    $('#mail-onderwerp').value = eigen ? eigen.onderwerp : s.onderwerp;
+    $('#mail-editor').innerHTML = window.vvzSchoon(eigen ? eigen.html : s.html);
+    $('#mail-chips').innerHTML = s.variabelen.map(v =>
+      `<button type="button" class="chip" data-var="${v}" title="${esc(window.vvzMail.UITLEG[v] || '')}">{${v}}</button>`).join('');
+    $('#mail-voorwaarden').innerHTML = s.voorwaarden.length
+      ? 'Tekst die alleen soms moet verschijnen zet je tussen ' + s.voorwaarden.map(v =>
+          `<code>{#${v}}…{/${v}}</code> (${esc(window.vvzMail.UITLEG[v])} is van toepassing)`).join(' of ') + '.'
+      : '';
+    $('#mail-status').textContent = eigen ? 'Eigen tekst.' : 'Standaardtekst.';
+  }
+  async function laadMails() {
+    if (mailTeksten) return;
+    try {
+      const res = await rpc('beheer_mailteksten', { wachtwoord: ww });
+      if (!res.ok) throw new Error(res.fout);
+      mailTeksten = res.teksten || {};
+      toonMail();
+    } catch (err) { $('#mail-status').textContent = err.message; }
+  }
+  $('#mail-soort').addEventListener('change', toonMail);
+  $('#mail-chips').addEventListener('click', (e) => {
+    const c = e.target.closest('.chip'); if (!c) return;
+    const tekst = `{${c.dataset.var}}`;
+    if (laatsteVeld === $('#mail-onderwerp')) {
+      const el = laatsteVeld, a = el.selectionStart ?? el.value.length, b = el.selectionEnd ?? a;
+      el.value = el.value.slice(0, a) + tekst + el.value.slice(b);
+      el.focus(); el.setSelectionRange(a + tekst.length, a + tekst.length);
+    } else {
+      $('#mail-editor').focus();
+      document.execCommand('insertText', false, tekst);
+    }
+  });
+  $('#mail-opslaan').addEventListener('click', async () => {
+    const k = $('#mail-soort').value;
+    const html = window.vvzSchoon($('#mail-editor').innerHTML), onderwerp = $('#mail-onderwerp').value.trim();
+    if (!onderwerp) { alert('Vul een onderwerp in.'); return; }
+    try {
+      const res = await rpc('beheer_zet_mailtekst', { wachtwoord: ww, soort: k, onderwerp, html });
+      if (!res.ok) throw new Error(res.fout || 'Opslaan mislukt');
+      mailTeksten[k] = { onderwerp, html };
+      $('#mail-editor').innerHTML = html;
+      $('#mail-status').textContent = `Opgeslagen om ${new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}. Geldt voor de volgende mails.`;
+    } catch (err) { alert(err.message); }
+  });
+  $('#mail-herstel').addEventListener('click', async () => {
+    const k = $('#mail-soort').value;
+    if (!confirm(`De eigen tekst voor "${MS[k].naam}" verwijderen en de standaardtekst terugzetten?`)) return;
+    try {
+      const res = await rpc('beheer_zet_mailtekst', { wachtwoord: ww, soort: k, onderwerp: '', html: '' });
+      if (!res.ok) throw new Error(res.fout || 'Mislukt');
+      delete mailTeksten[k];
+      toonMail();
+    } catch (err) { alert(err.message); }
+  });
+  $('#mail-voorbeeld').addEventListener('click', () => {
+    const M = window.vvzMail, k = $('#mail-soort').value;
+    const link = C.BUNQ_URL.replace('{bedrag}', '44.50').replace('{omschrijving}', 'voorbeeld');
+    const vars = {
+      voornaam: 'Jan', contactpersoon: 'Jan de Vries', referentie: 'VVZ-12345', wedstrijd: C.WEDSTRIJD,
+      datum: C.DATUM_TEKST, totaal: euro(44.5), toelichting: 'Toegevoegd: Piet de Vries (t/m 15 jaar)',
+      bedrag: euro(12.5), terug: euro(19.5), nog_te_betalen: euro(32),
+      deelnemers: M.tabel([['Jan de Vries', 'VVZ\'49 45+ 7x7'], ['Piet de Vries', 'O14-6']]),
+      specificatie: M.tabel([['1× t/m 15 jaar à € 12,50', euro(12.5)], ['1× vanaf 16 jaar à € 19,50', euro(19.5)]], ['Totaal', euro(32)]),
+      betaalknop: M.betaalknop(link, euro(32)),
+    };
+    const aan = { terug: true, nog_te_betalen: true };
+    const mail = M.maak(k, { onderwerp: $('#mail-onderwerp').value, html: window.vvzSchoon($('#mail-editor').innerHTML) }, vars, aan);
+    open(`Voorbeeld: ${MS[k].naam}`,
+      `<p><strong>Onderwerp:</strong> ${esc(mail.onderwerp)}</p><div class="mail-voorbeeld">${mail.html}</div>
+       <p class="samenvatting">In het voorbeeld zijn alle voorwaardelijke stukken zichtbaar. In een echte mail alleen als ze van toepassing zijn.</p>`, null);
   });
 
   // ---------- sluitdatum ----------
