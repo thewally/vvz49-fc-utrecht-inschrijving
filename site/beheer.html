@@ -224,6 +224,7 @@
           <div class="knoppen">
             <button class="knop-secundair klein" data-actie="wijzig-contact" data-insc="${i.id}">Contactpersoon wijzigen</button>
             <button class="knop-secundair klein" data-actie="nieuwe-persoon" data-insc="${i.id}">+ Deelnemer</button>
+            ${openBedrag(i) > 0 ? `<button class="knop-secundair klein" data-actie="betaallink" data-insc="${i.id}">Betaallink ${euro(openBedrag(i))}</button>` : ''}
             <button class="knop-gevaar klein" data-actie="verwijder-insc" data-insc="${i.id}">Inschrijving verwijderen</button>
           </div>
         </div>
@@ -265,6 +266,19 @@
     const jong = ds.filter(d => d.categorie === 't/m 15').length, oud = ds.length - jong;
     const delen = [jong && `<strong>${jong}x</strong> t/m 15`, oud && `<strong>${oud}x</strong> vanaf 16`].filter(Boolean).join(', ');
     return `${ds.length} ${ds.length === 1 ? 'deelnemer' : 'deelnemers'}${delen ? ` (${delen})` : ''}`;
+  }
+
+  // Nog te ontvangen voor deze inschrijving: inschrijving zelf (indien niet betaald) + open betaalverzoeken
+  function openBedrag(i) {
+    return (i.betaald ? 0 : Number(i.inschrijf_bedrag)) +
+      (i.wijzigingen || []).filter(w => w.taak === 'betalen' && !w.afgehandeld && !w.vervallen)
+        .reduce((s, w) => s + Number(w.bedrag), 0);
+  }
+  // Zelfde opbouw als de betaallink na "Inschrijven en betalen"
+  function betaallink(i, bedrag) {
+    const omschrijving = C.OMSCHRIJVING.replace('{contactpersoon}', naam(i)).replace('{referentie}', i.referentie);
+    return C.BUNQ_URL.replace('{bedrag}', Number(bedrag).toFixed(2))
+      .replace('{omschrijving}', encodeURIComponent(omschrijving).replace(/%20/g, '+'));
   }
 
   function heeftOpen(i) {
@@ -332,11 +346,14 @@
     $('#dlg-velden').innerHTML = velden;
     $('#dlg-melding').innerHTML = '';
     opslaan = actie;
+    $('#dlg-form [type=submit]').classList.toggle('verborgen', !actie);
+    $('#dlg-annuleer').textContent = actie ? 'Annuleren' : 'Sluiten';
     dlg.showModal();
   }
   $('#dlg-annuleer').addEventListener('click', () => dlg.close());
   $('#dlg-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (!opslaan) { dlg.close(); return; }
     const leeg = [...$('#dlg-velden').querySelectorAll('[required]')].filter(x => !x.value.trim());
     leeg.forEach(x => x.classList.add('ongeldig'));
     if (leeg.length) return;
@@ -370,6 +387,26 @@
     const d = i && i.deelnemers.find(x => x.id === b.dataset.dln);
     try {
       switch (b.dataset.actie) {
+        case 'betaallink': {
+          const bedrag = openBedrag(i), link = betaallink(i, bedrag);
+          open(`Betaallink ${i.referentie}`,
+            `<p>Openstaand bedrag voor <strong>${esc(naam(i))}</strong>: <strong>${euro(bedrag)}</strong></p>
+             <div class="veld"><label for="bl-link">Link</label><input id="bl-link" value="${esc(link)}" readonly></div>
+             <div class="knoppen">
+               <button type="button" class="knop-secundair klein" id="bl-kopie">Kopiëren</button>
+               <a class="knop-secundair klein" style="text-decoration:none" href="${esc(link)}" target="_blank" rel="noopener">Openen</a>
+               <a class="knop-secundair klein" style="text-decoration:none"
+                  href="mailto:${encodeURIComponent(i.email)}?subject=${encodeURIComponent(`Betaalverzoek ${C.WEDSTRIJD} (${i.referentie})`)}&body=${encodeURIComponent(`Beste ${i.voornaam},\n\nVoor je inschrijving ${i.referentie} staat nog ${euro(bedrag)} open. Je kunt betalen via:\n${link}\n\nSportieve groet,\nVVZ'49`)}">Mailen</a>
+               <span id="bl-status" class="samenvatting"></span>
+             </div>`,
+            null);
+          $('#dlg-form [type=submit]').classList.add('verborgen');
+          $('#bl-kopie').addEventListener('click', async () => {
+            try { await navigator.clipboard.writeText(link); } catch { $('#bl-link').select(); document.execCommand('copy'); }
+            $('#bl-status').textContent = 'Gekopieerd!';
+          });
+          break;
+        }
         case 'wijzig-contact':
           open(`Contactpersoon ${i.referentie}`,
             `<div class="rij twee">${veld('c-vn', 'Voornaam', i.voornaam)}${veld('c-tv', 'Tussenvoegsel', i.tussenvoegsel || '', 'text', false)}</div>
