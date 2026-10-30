@@ -61,7 +61,7 @@
     <details><summary><strong>Aantal per team</strong></summary><div class="teams" id="teams"></div></details>
     <div class="balk" style="margin-top:16px">
       <input id="zoek" placeholder="Zoek op naam, e-mail of referentie">
-      <select id="filter-betaald"><option value="">Alle inschrijvingen</option><option value="open">Met open acties</option><option value="klaar">Alles afgehandeld</option></select>
+      <select id="filter-betaald"><option value="">Alle inschrijvingen</option><option value="open">Open acties</option><option value="klaar">Afgehandeld</option></select>
       <select id="filter-team"><option value="">Alle teams</option></select>
       <button class="knop-secundair" id="ververs">Verversen</button>
       <button class="knop-secundair" id="export">CSV-export</button>
@@ -179,10 +179,16 @@
         ${wijzTabel(i.wijzigingen, i)}
       </div>`).join('') || '<p>Geen inschrijvingen gevonden.</p>';
 
-    $('#verw-sectie').classList.toggle('verborgen', !verwijderd.length);
     const groepen = {};
     verwijderd.forEach(w => (groepen[w.referentie] = groepen[w.referentie] || []).push(w));
-    $('#verwijderd').innerHTML = Object.values(groepen).map(ws => {
+    const zichtVerw = Object.values(groepen).filter(ws => {
+      const open = ws.some(x => x.taak && !x.afgehandeld && !x.vervallen);
+      return (!fb || (fb === 'open') === open) && !ft &&
+        (!zoek || [ws[0].contact_naam, ws[0].email, ws[0].referentie, ...ws.map(x => x.toelichting)]
+          .join(' ').toLowerCase().includes(zoek));
+    });
+    $('#verw-sectie').classList.toggle('verborgen', !zichtVerw.length);
+    $('#verwijderd').innerHTML = zichtVerw.map(ws => {
       ws.sort((a, b) => a.aangemaakt_op.localeCompare(b.aangemaakt_op));
       const w = ws[ws.length - 1];
       const open = ws.some(x => x.taak && !x.afgehandeld && !x.vervallen);
