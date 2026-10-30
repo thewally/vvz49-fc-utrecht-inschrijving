@@ -44,7 +44,7 @@ input, select {
 }
 input:focus, select:focus { outline: none; border-color: var(--groen-donker); box-shadow: 0 0 0 3px rgba(46,125,50,.2); }
 input.ongeldig, select.ongeldig { border-color: var(--fout); }
-.rij { display: grid; gap: 12px; grid-template-columns: 1fr; align-items: end; }
+.rij { display: grid; gap: 12px; grid-template-columns: 1fr; align-items: start; }
 .veld label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (min-width: 560px) { .rij.drie { grid-template-columns: 2fr 1fr 2fr; } .rij.twee { grid-template-columns: 1fr 1fr; } }
 
