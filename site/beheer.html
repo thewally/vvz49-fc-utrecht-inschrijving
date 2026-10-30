@@ -617,12 +617,16 @@
     const vars = {
       voornaam: 'Jan', contactpersoon: 'Jan de Vries', referentie: 'VVZ-12345', wedstrijd: C.WEDSTRIJD,
       datum: C.DATUM_TEKST, totaal: euro(44.5), toelichting: 'Toegevoegd: Piet de Vries (t/m 15 jaar)',
-      bedrag: euro(12.5), terug: euro(19.5), nog_te_betalen: euro(32),
+      bedrag: euro(12.5), terug: euro(19.5), nog_te_betalen: euro(12.5), openstaand: euro(12.5),
       deelnemers: M.tabel([['Jan de Vries', 'VVZ\'49 45+ 7x7'], ['Piet de Vries', 'O14-6']]),
       specificatie: M.tabel([['1× t/m 15 jaar à € 12,50', euro(12.5)], ['1× vanaf 16 jaar à € 19,50', euro(19.5)]], ['Totaal', euro(32)]),
       betaalknop: M.betaalknop(link, euro(32)),
     };
-    const aan = { terug: true, nog_te_betalen: true };
+    if (k !== 'bevestiging') {
+      vars.specificatie = M.tabel([['Toegevoegd: Piet de Vries (t/m 15 jaar)', euro(12.5)]], ['Nog te betalen', euro(12.5)]);
+      vars.betaalknop = M.betaalknop(link, euro(12.5));
+    }
+    const aan = { terug: true, nog_te_betalen: true, openstaand: true };
     const mail = M.maak(k, { onderwerp: $('#mail-onderwerp').value, html: window.vvzSchoon($('#mail-editor').innerHTML) }, vars, aan);
     open(`Voorbeeld: ${MS[k].naam}`,
       `<p><strong>Onderwerp:</strong> ${esc(mail.onderwerp)}</p><div class="mail-voorbeeld">${mail.html}</div>

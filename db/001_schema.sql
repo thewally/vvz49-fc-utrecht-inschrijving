@@ -607,6 +607,15 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
+-- Eenmalig: eigen mailteksten terugzetten naar de nieuwe standaardteksten (okt 2026)
+do $$
+begin
+  if not exists (select 1 from beheer_instellingen where sleutel = 'migratie_mailteksten_v2') then
+    delete from beheer_instellingen where sleutel like 'mail\_%';
+    insert into beheer_instellingen (sleutel, waarde) values ('migratie_mailteksten_v2', now()::text);
+  end if;
+end $$;
+
 -- ---------------------------------------------------------------
 -- Rechten: publiek mag alléén de functies hierboven aanroepen
 -- ---------------------------------------------------------------

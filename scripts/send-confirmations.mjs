@@ -84,35 +84,64 @@ for (const i of rows) {
 
 // ---------- mails bij wijzigingen door beheer ----------
 const { rows: wijzigingen } = await db.query(
-  `select w.*, i.totaal_bedrag as huidig_totaal from wijzigingen w
+  `select w.*, i.totaal_bedrag as huidig_totaal, i.betaald as insc_betaald, i.inschrijf_bedrag
+     from wijzigingen w
      left join inschrijvingen i on i.id = w.inschrijving_id
     where w.mail_verstuurd_op is null order by w.aangemaakt_op limit 50`);
 console.log(`${wijzigingen.length} wijziging(en) te mailen`);
 
 for (const w of wijzigingen) {
-  // Betaalverzoek dat inmiddels vervallen is: niet meer versturen
-  if (w.soort === 'persoon_toegevoegd' && w.vervallen) {
+  // Niet meer versturen: vervallen betaalverzoek, of een aanpassing van een inmiddels verwijderde inschrijving
+  // (dan volgt de mail "Inschrijving verwijderd" met het totale terug te storten bedrag)
+  if ((w.soort === 'persoon_toegevoegd' && w.vervallen) ||
+      (w.soort !== 'inschrijving_verwijderd' && !w.inschrijving_id)) {
     await db.query(`update wijzigingen set mail_verstuurd_op = now() where id = $1`, [w.id]);
     continue;
   }
+
+  // Huidige deelnemers en wat er nu nog openstaat (inschrijving zelf + open betaalverzoeken)
+  let deelnemers = [], openRegels = [];
+  if (w.inschrijving_id) {
+    deelnemers = (await db.query(
+      `select voornaam, achternaam, team from deelnemers where inschrijving_id = $1 order by achternaam, voornaam`,
+      [w.inschrijving_id])).rows;
+    if (!w.insc_betaald && Number(w.inschrijf_bedrag) > 0) openRegels.push(['Inschrijving', Number(w.inschrijf_bedrag)]);
+    const open = (await db.query(
+      `select toelichting, bedrag from wijzigingen
+        where inschrijving_id = $1 and taak = 'betalen' and not afgehandeld and not vervallen
+        order by aangemaakt_op`, [w.inschrijving_id])).rows;
+    open.forEach(o => openRegels.push([o.toelichting, Number(o.bedrag)]));
+  }
+  const openstaand = openRegels.reduce((t, [, b]) => t + b, 0);
+
+  // Bij verwijderen van de hele inschrijving: alles wat nog teruggestort moet worden
+  let bedrag = Number(w.bedrag);
+  if (w.soort === 'inschrijving_verwijderd') {
+    bedrag = Number((await db.query(
+      `select coalesce(sum(bedrag), 0) as s from wijzigingen
+        where referentie = $1 and taak = 'terugstorten' and not afgehandeld and not vervallen`, [w.referentie])).rows[0].s);
+  }
+
   const vars = {
     voornaam: w.voornaam, contactpersoon: w.contact_naam, referentie: w.referentie,
     wedstrijd: WEDSTRIJD, datum: DATUM, toelichting: w.toelichting,
-    bedrag: euro(w.bedrag), terug: euro(w.bedrag),
+    bedrag: euro(bedrag), terug: euro(bedrag),
     totaal: euro(w.soort === 'persoon_verwijderd' ? w.nieuw_totaal : (w.huidig_totaal ?? 0)),
-    nog_te_betalen: euro(w.nog_te_betalen || 0),
+    openstaand: euro(openstaand),
+    nog_te_betalen: euro(openstaand),
+    deelnemers: M.tabel(deelnemers.map(d => [`${d.voornaam} ${d.achternaam}`, d.team])),
+    specificatie: openRegels.length
+      ? M.tabel(openRegels.map(([t, b]) => [t, euro(b)]), ['Nog te betalen', euro(openstaand)])
+      : { html: '' },
+    betaalknop: openstaand > 0
+      ? M.betaalknop(betaallink(w.contact_naam, w.referentie, openstaand), euro(openstaand))
+      : { html: '' },
   };
   const aan = {
-    terug: w.taak === 'terugstorten' && Number(w.bedrag) > 0,
-    nog_te_betalen: Number(w.nog_te_betalen) > 0,
+    terug: (w.taak === 'terugstorten' || w.soort === 'inschrijving_verwijderd') && bedrag > 0,
+    openstaand: openstaand > 0,
+    nog_te_betalen: openstaand > 0,
   };
-  if (w.soort === 'persoon_toegevoegd') {
-    vars.betaalknop = M.betaalknop(betaallink(w.contact_naam, w.referentie, w.bedrag, ' aanvulling'), euro(w.bedrag));
-  } else if (aan.nog_te_betalen) {
-    vars.betaalknop = M.betaalknop(betaallink(w.contact_naam, w.referentie, w.nog_te_betalen), euro(w.nog_te_betalen));
-  } else {
-    vars.betaalknop = { html: '' };
-  }
   try {
     await verstuur(w.email, M.maak(w.soort, sjablonen[w.soort], vars, aan), `${w.soort} ${w.referentie}`);
     await db.query(`update wijzigingen set mail_verstuurd_op = now() where id = $1`, [w.id]);

@@ -20,30 +20,31 @@ globalThis.vvzMail = (() => {
       onderwerp: 'Aanvullend betaalverzoek {wedstrijd} ({referentie})',
       html: '<p>Beste {voornaam},</p>' +
         '<p>Je inschrijving {referentie} voor {wedstrijd} ({datum}) is aangepast:</p><p>{toelichting}</p>' +
-        '<p>Het nog te betalen bedrag hiervoor is <strong>{bedrag}</strong>.</p><p>{betaalknop}</p>' +
-        '<p>Het totaal van je inschrijving is nu {totaal}.</p>' + groet,
-      variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'toelichting', 'bedrag', 'totaal', 'betaalknop'],
-      voorwaarden: [],
+        '<h3>Ingeschreven deelnemers</h3><p>{deelnemers}</p>' +
+        '<h3>Te betalen</h3><p>{specificatie}</p>' +
+        '<p>Het nog te betalen bedrag is <strong>{openstaand}</strong>.</p><p>{betaalknop}</p>' + groet,
+      variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'toelichting', 'deelnemers', 'specificatie', 'openstaand', 'bedrag', 'totaal', 'betaalknop'],
+      voorwaarden: ['openstaand'],
     },
     persoon_verwijderd: {
       naam: 'Deelnemer verwijderd',
       onderwerp: 'Inschrijving aangepast: {wedstrijd} ({referentie})',
       html: '<p>Beste {voornaam},</p>' +
-        '<p>Je inschrijving {referentie} voor {wedstrijd} ({datum}) is aangepast.</p><p>{toelichting}</p>' +
-        '<p>Het nieuwe totaal van je inschrijving is {totaal}.</p>' +
-        '<p>{#terug}Je hebt {terug} te veel betaald. Dit bedrag wordt in overleg teruggestort.{/terug}</p>' +
-        '<p>{#nog_te_betalen}Je hebt je inschrijving nog niet betaald. Het te betalen bedrag is nu {nog_te_betalen}.{/nog_te_betalen}</p>' +
-        '<p>{#nog_te_betalen}{betaalknop}{/nog_te_betalen}</p>' + groet,
-      variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'toelichting', 'totaal', 'terug', 'nog_te_betalen', 'betaalknop'],
-      voorwaarden: ['terug', 'nog_te_betalen'],
+        '<p>Je inschrijving {referentie} voor {wedstrijd} ({datum}) is aangepast:</p><p>{toelichting}</p>' +
+        '<h3>Ingeschreven deelnemers</h3><p>{deelnemers}</p>' +
+        '<h3>{#openstaand}Nog te betalen{/openstaand}</h3><p>{#openstaand}{specificatie}{/openstaand}</p>' +
+        '<p>{#openstaand}{betaalknop}{/openstaand}</p>' +
+        '<p>{#terug}Je krijgt nog {bedrag} terug. Dit bedrag wordt in overleg teruggestort.{/terug}</p>' + groet,
+      variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'toelichting', 'deelnemers', 'specificatie', 'openstaand', 'bedrag', 'totaal', 'betaalknop'],
+      voorwaarden: ['openstaand', 'terug'],
     },
     inschrijving_verwijderd: {
       naam: 'Inschrijving verwijderd',
       onderwerp: 'Inschrijving verwijderd: {wedstrijd} ({referentie})',
       html: '<p>Beste {voornaam},</p>' +
         '<p>Je inschrijving {referentie} voor {wedstrijd} ({datum}) is verwijderd.</p>' +
-        '<p>{#terug}Je hebt al {terug} betaald. Dit bedrag wordt in overleg teruggestort.{/terug}</p>' + groet,
-      variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'terug'],
+        '<p>{#terug}Je krijgt nog {bedrag} terug. Dit bedrag wordt in overleg teruggestort.{/terug}</p>' + groet,
+      variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'bedrag'],
       voorwaarden: ['terug'],
     },
   };
@@ -51,9 +52,11 @@ globalThis.vvzMail = (() => {
   const UITLEG = {
     voornaam: 'Voornaam contactpersoon', contactpersoon: 'Volledige naam contactpersoon', referentie: 'Referentie (VVZ-12345)',
     wedstrijd: 'Wedstrijd', datum: 'Datum en tijd wedstrijd', totaal: 'Totaalbedrag inschrijving',
-    deelnemers: 'Tabel met deelnemers en teams', specificatie: 'Tabel met bedragen', betaalknop: 'Groene bunq-betaalknop',
-    toelichting: 'Wat er gewijzigd is', bedrag: 'Bedrag van dit betaalverzoek', terug: 'Terug te storten bedrag',
-    nog_te_betalen: 'Nog te betalen bedrag',
+    deelnemers: 'Tabel met alle huidige deelnemers en teams',
+    specificatie: 'Tabel met bedragen (bij wijzigingen: alleen wat nog openstaat)',
+    betaalknop: 'Groene bunq-betaalknop voor het openstaande bedrag',
+    toelichting: 'Wat er gewijzigd is', bedrag: 'Bedrag van deze wijziging (betaalverzoek of terug te storten bedrag)',
+    openstaand: 'Totaal nog te betalen bedrag', terug: 'Terug te storten bedrag',
   };
 
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -71,7 +74,7 @@ globalThis.vvzMail = (() => {
 
   function opmaak(html) {
     return html
-      .replace(/<p>\s*(?:<br\s*\/?>)?\s*<\/p>/g, '')                        // lege alinea's (weggevallen voorwaarden)
+      .replace(/<(p|h3)>\s*(?:<br\s*\/?>)?\s*<\/\1>/g, '')                        // lege alinea's (weggevallen voorwaarden)
       .replace(/<p>\s*(<table[\s\S]*?<\/table>)\s*<\/p>/g, '$1')
       .replace(/<h3>/g, '<h3 style="color:#1B5E20;margin:18px 0 6px">')
       .replace(/<p>/g, '<p style="margin:0 0 12px">');
