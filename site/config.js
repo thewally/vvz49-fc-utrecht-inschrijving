@@ -1,7 +1,7 @@
 // Publieke configuratie. Hier staan GEEN geheimen: de database is afgeschermd met rechten/RLS.
 window.VVZ_CONFIG = {
-  // Neon Console > project > Data API > "API URL" (eindigt meestal op /rest/v1)
-  DATA_API_URL: 'https://VUL-HIER-JE-NEON-DATA-API-URL-IN/neondb/rest/v1',
+  // Wordt bij de deploy ingevuld vanuit de GitHub Secret NEON_DATA_API_URL
+  DATA_API_URL: '__NEON_DATA_API_URL__',
 
   WEDSTRIJD: 'FC Utrecht - Fortuna Sittard',
   DATUM_TEKST: 'Zaterdag 12 december 2026, 16:15 uur',

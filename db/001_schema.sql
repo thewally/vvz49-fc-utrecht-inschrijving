@@ -118,6 +118,18 @@ begin
     raise exception 'Vul alle verplichte gegevens van de contactpersoon in.';
   end if;
 
+  -- Rem tegen misbruik: max. 5 inschrijvingen per e-mailadres per dag
+  -- en max. 40 inschrijvingen in totaal per 10 minuten.
+  if (select count(*) from inschrijvingen
+      where email = lower(trim(contact->>'email'))
+        and aangemaakt_op > now() - interval '1 day') >= 5 then
+    raise exception 'Met dit e-mailadres zijn vandaag al meerdere inschrijvingen gedaan. Neem contact op met de organisatie.';
+  end if;
+  if (select count(*) from inschrijvingen
+      where aangemaakt_op > now() - interval '10 minutes') >= 40 then
+    raise exception 'Het is op dit moment erg druk. Probeer het over een paar minuten opnieuw.';
+  end if;
+
   for i in 1..20 loop
     v_ref := 'VVZ-' || lpad((floor(random() * 100000))::int::text, 5, '0');
     exit when not exists (select 1 from inschrijvingen where referentie = v_ref);
