@@ -115,7 +115,7 @@
     const alle = data.flatMap(i => i.deelnemers);
     const jong = alle.filter(d => d.categorie === 't/m 15').length;
     const verwacht = data.reduce((s, i) => s + Number(i.totaal_bedrag), 0);
-    const ontvangen = data.filter(i => i.betaald).reduce((s, i) => s + Number(i.totaal_bedrag), 0);
+    const ontvangen = data.reduce((s, i) => s + Number(i.betaald_bedrag || 0), 0);
     $('#kpi').innerHTML = `
       <div><span>Inschrijvingen</span><strong>${data.length}</strong></div>
       <div><span>Personen</span><strong>${alle.length}</strong></div>
@@ -146,11 +146,13 @@
           <div>
             <strong>${esc(naam(i))}</strong> · ${esc(i.referentie)} · <strong>${euro(i.totaal_bedrag)}</strong>
             <div class="meta">${esc(i.email)} · ${esc(i.telefoon)} · ingeschreven ${datum(i.aangemaakt_op)}
-              · mail ${i.bevestiging_verstuurd_op ? 'verstuurd' : 'nog niet verstuurd'}</div>
+              · mail ${i.bevestiging_verstuurd_op ? 'verstuurd' : 'nog niet verstuurd'}
+              ${Number(i.betaald_bedrag) > 0 && !i.betaald ? `<br>Betaald: ${euro(i.betaald_bedrag)} van ${euro(i.totaal_bedrag)} · open: <strong>${euro(i.totaal_bedrag - i.betaald_bedrag)}</strong>` : ''}
+              ${(i.betaalverzoeken || []).map(b => `<br>Betaalverzoek ${euro(b.bedrag)} (${esc(b.toelichting)}) · ${b.verstuurd_op ? 'verstuurd ' + datum(b.verstuurd_op) : 'in wachtrij'}`).join('')}</div>
           </div>
           <div class="knoppen">
             <label class="betaald-vink"><input type="checkbox" data-id="${i.id}" ${i.betaald ? 'checked' : ''}> Betaald</label>
-            <button class="knop-secundair klein" data-actie="wijzig-contact" data-insc="${i.id}">Bewerken</button>
+            <button class="knop-secundair klein" data-actie="wijzig-contact" data-insc="${i.id}">Contactpersoon wijzigen</button>
             <button class="knop-secundair klein" data-actie="nieuwe-persoon" data-insc="${i.id}">+ Persoon</button>
             <button class="knop-gevaar klein" data-actie="verwijder-insc" data-insc="${i.id}">Verwijderen</button>
           </div>
@@ -159,8 +161,7 @@
           <tr><th>Naam</th><th>Geboortedatum</th><th>Team</th><th>Tarief</th><th></th></tr>
           ${i.deelnemers.map(d => `<tr><td>${esc(d.voornaam)} ${esc(d.achternaam)}</td><td>${gebdatum(d.geboortedatum)}</td>
             <td>${esc(d.team)}</td><td>${esc(d.categorie)} (${euro(d.prijs)})</td>
-            <td class="acties-cel"><button class="knop-secundair klein" data-actie="wijzig-persoon" data-insc="${i.id}" data-dln="${d.id}">Bewerken</button>
-              <button class="knop-gevaar klein" data-actie="verwijder-persoon" data-insc="${i.id}" data-dln="${d.id}">Verwijderen</button></td></tr>`).join('')}
+            <td class="acties-cel"><button class="knop-gevaar klein" data-actie="verwijder-persoon" data-insc="${i.id}" data-dln="${d.id}">Verwijderen</button></td></tr>`).join('')}
         </table>
       </div>`).join('') || '<p>Geen inschrijvingen gevonden.</p>';
   }
@@ -217,6 +218,16 @@
   }
   const persoonData = () => ({ voornaam: v('p-vn'), achternaam: v('p-an'), geboortedatum: v('p-gd'), team: v('p-tm') });
 
+  function terugstortMelding(i, bedrag) {
+    alert(`Er is al betaald. Stort ${euro(bedrag)} handmatig terug.
+
+` +
+      `Contactpersoon: ${naam(i)}
+E-mail: ${i.email}
+Telefoon: ${i.telefoon}
+Referentie: ${i.referentie}`);
+  }
+
   $('#lijst').addEventListener('click', async (e) => {
     const b = e.target.closest('button[data-actie]');
     if (!b) return;
@@ -233,26 +244,35 @@
               contact: { voornaam: v('c-vn'), tussenvoegsel: v('c-tv'), achternaam: v('c-an'), email: v('c-em'), telefoon: v('c-tel') } }));
           break;
         case 'nieuwe-persoon':
-          open(`Persoon toevoegen aan ${i.referentie}`, persoonVelden(),
-            () => rpc('beheer_bewaar_deelnemer', { wachtwoord: ww, inschrijving: i.id, deelnemer: null, gegevens: persoonData() }));
-          break;
-        case 'wijzig-persoon':
-          open(`${d.voornaam} ${d.achternaam} bewerken`, persoonVelden(d),
-            () => rpc('beheer_bewaar_deelnemer', { wachtwoord: ww, inschrijving: i.id, deelnemer: d.id, gegevens: persoonData() }));
+          open(`Persoon toevoegen aan ${i.referentie}`,
+            persoonVelden() + `<p class="samenvatting">Na opslaan krijgt ${esc(naam(i))} automatisch een betaalverzoek per mail voor het bedrag van deze persoon.</p>`,
+            async () => {
+              const res = await rpc('beheer_voeg_deelnemer_toe', { wachtwoord: ww, inschrijving: i.id, gegevens: persoonData() });
+              if (res.ok) setTimeout(() => alert(`Persoon toegevoegd. Er gaat een betaalverzoek van ${euro(res.bedrag)} naar ${i.email}.`), 50);
+              return res;
+            });
           break;
         case 'verwijder-persoon': {
           const laatste = i.deelnemers.length === 1;
-          if (!confirm(`${d.voornaam} ${d.achternaam} verwijderen?` + (laatste ? '\n\nDit is de laatste persoon: de hele inschrijving wordt verwijderd.' : ''))) return;
+          const betaald = Number(i.betaald_bedrag) > 0;
+          if (!confirm(`${d.voornaam} ${d.achternaam} verwijderen?` +
+            (laatste ? '\n\nDit is de laatste persoon: de hele inschrijving wordt verwijderd.' : '') +
+            (betaald ? `\n\nLet op: volgens de administratie is er al ${euro(i.betaald_bedrag)} betaald.` : ''))) return;
           const res = await rpc('beheer_verwijder_deelnemer', { wachtwoord: ww, deelnemer: d.id });
           if (!res.ok) throw new Error(res.fout);
           await laad();
+          if (Number(res.terug) > 0) terugstortMelding(i, res.terug);
           break;
         }
         case 'verwijder-insc': {
-          if (!confirm(`Inschrijving ${i.referentie} van ${naam(i)} (${i.deelnemers.length} personen) verwijderen?\n\nDit kan niet ongedaan worden gemaakt.`)) return;
+          const betaald = Number(i.betaald_bedrag) > 0;
+          if (!confirm(`Inschrijving ${i.referentie} van ${naam(i)} (${i.deelnemers.length} personen) verwijderen?` +
+            (betaald ? `\n\nLet op: volgens de administratie is er al ${euro(i.betaald_bedrag)} betaald.` : '') +
+            '\n\nDit kan niet ongedaan worden gemaakt.')) return;
           const res = await rpc('beheer_verwijder_inschrijving', { wachtwoord: ww, inschrijving: i.id });
           if (!res.ok) throw new Error(res.fout);
           await laad();
+          if (Number(res.terug) > 0) terugstortMelding(i, res.terug);
           break;
         }
       }

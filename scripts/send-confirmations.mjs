@@ -15,9 +15,9 @@ const euro = (n) => '€ ' + Number(n).toFixed(2).replace('.', ',');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const naam = (i) => [i.voornaam, i.tussenvoegsel, i.achternaam].filter(Boolean).join(' ');
 
-function betaallink(i) {
-  const omschrijving = `FC Utrecht vs Fortuna Sittard - ${naam(i)} ${i.referentie}`;
-  return BUNQ.replace('{bedrag}', Number(i.totaal_bedrag).toFixed(2))
+function betaallink(i, bedrag = i.totaal_bedrag, extra = '') {
+  const omschrijving = `FC Utrecht vs Fortuna Sittard - ${naam(i)} ${i.referentie}${extra}`;
+  return BUNQ.replace('{bedrag}', Number(bedrag).toFixed(2))
     .replace('{omschrijving}', encodeURIComponent(omschrijving).replace(/%20/g, '+'));
 }
 
@@ -100,6 +100,60 @@ for (const i of rows) {
   } catch (err) {
     fouten++;
     console.error(`Mislukt: ${i.referentie}: ${err.message}`);
+  }
+}
+
+// ---------- aanvullende betaalverzoeken ----------
+function verzoekMail(i, v) {
+  const link = betaallink(i, v.bedrag, ' aanvulling');
+  const html = `
+<div style="font-family:Arial,sans-serif;max-width:600px;color:#1f2a1f">
+  <h2 style="color:#1B5E20">Aanvullend betaalverzoek ${WEDSTRIJD}</h2>
+  <p>Beste ${esc(i.voornaam)},</p>
+  <p>Je inschrijving <strong>${esc(i.referentie)}</strong> is aangepast:</p>
+  <p>${esc(v.toelichting)}</p>
+  <p>Het nog te betalen bedrag is <strong>${euro(v.bedrag)}</strong>.</p>
+  <p><a href="${link}" style="background:#2E7D32;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">Betaal ${euro(v.bedrag)} via bunq</a></p>
+  <p>Het totaal van je inschrijving is nu ${euro(i.totaal_bedrag)}.</p>
+  <p>Sportieve groet,<br>VVZ'49</p>
+</div>`;
+  const text = `Beste ${i.voornaam},
+
+Je inschrijving ${i.referentie} voor ${WEDSTRIJD} is aangepast:
+${v.toelichting}
+
+Nog te betalen: ${euro(v.bedrag)}
+Betalen: ${link}
+
+Het totaal van je inschrijving is nu ${euro(i.totaal_bedrag)}.
+
+Sportieve groet,
+VVZ'49`;
+  return { html, text };
+}
+
+const { rows: verzoeken } = await db.query(
+  `select b.*, row_to_json(i) as insc from betaalverzoeken b
+     join inschrijvingen i on i.id = b.inschrijving_id
+    where b.verstuurd_op is null order by b.aangemaakt_op limit 50`);
+console.log(`${verzoeken.length} nieuw(e) betaalverzoek(en)`);
+
+for (const v of verzoeken) {
+  const i = v.insc;
+  const { html, text } = verzoekMail(i, v);
+  try {
+    await transport.sendMail({
+      from: `"${MAIL_FROM_NAME}" <${GMAIL_USER}>`,
+      to: i.email,
+      replyTo: MAIL_REPLY_TO || GMAIL_USER,
+      subject: `Aanvullend betaalverzoek ${WEDSTRIJD} (${i.referentie})`,
+      html, text,
+    });
+    await db.query(`update betaalverzoeken set verstuurd_op = now() where id = $1`, [v.id]);
+    console.log(`Betaalverzoek verstuurd: ${i.referentie} ${v.bedrag}`);
+  } catch (err) {
+    fouten++;
+    console.error(`Betaalverzoek mislukt: ${i.referentie}: ${err.message}`);
   }
 }
 
