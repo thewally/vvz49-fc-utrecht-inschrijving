@@ -220,7 +220,7 @@
 
   function aantalTekst(ds) {
     const jong = ds.filter(d => d.categorie === 't/m 15').length, oud = ds.length - jong;
-    const delen = [jong && `${jong} t/m 15`, oud && `${oud} vanaf 16`].filter(Boolean).join(', ');
+    const delen = [jong && `${jong}x t/m 15`, oud && `${oud}x vanaf 16`].filter(Boolean).join(', ');
     return `${ds.length} ${ds.length === 1 ? 'deelnemer' : 'deelnemers'}${delen ? ` (${delen})` : ''}`;
   }
 
