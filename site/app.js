@@ -18,14 +18,19 @@
   let sluitdatum = null;
   const vulSluitdatum = () => { if (sluitdatum) $$('[data-sluitdatum]').forEach(el => el.textContent = datumTijd(sluitdatum)); };
 
-  fetch('intro.html', { cache: 'no-cache' }).then(r => r.ok ? r.text() : '').then(h => { $('#intro').innerHTML = h; vulSluitdatum(); });
+  async function toonIntro(dbIntro) {
+    let h = dbIntro;
+    if (!h) h = await fetch('intro.html', { cache: 'no-cache' }).then(r => r.ok ? r.text() : '').catch(() => '');
+    $('#intro').innerHTML = window.vvzSchoon(h).replace(/\{sluitdatum\}/g, '<span data-sluitdatum>[nog te bepalen]</span>');
+    vulSluitdatum();
+  }
 
 
   const rpc = (naam, body) => window.vvzRpc(naam, body);
 
   rpc('formulier_status').then(st => {
     sluitdatum = st && st.sluitdatum;
-    vulSluitdatum();
+    toonIntro(st && st.intro);
     if (st && st.open === false) {
       $('#formulier').classList.add('verborgen');
       $('#stappen').classList.add('verborgen');
@@ -33,7 +38,7 @@
       g.textContent = `De inschrijving is gesloten${sluitdatum ? ' sinds ' + datumTijd(sluitdatum) : ''}. Je kunt je niet meer aanmelden.`;
       g.classList.remove('verborgen');
     }
-  }).catch(() => {});
+  }).catch(() => toonIntro(null));
 
   rpc('teams').then(t => { if (Array.isArray(t) && t.length) { TEAMS = t; vulTeams(); } }).catch(() => {});
 

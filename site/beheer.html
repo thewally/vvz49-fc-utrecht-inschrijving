@@ -41,6 +41,14 @@
     .sluit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 16px;
              padding: 10px 12px; border: 1px solid var(--rand); border-radius: 8px; }
     .sluit input { width: auto; padding: 6px 10px; }
+    .intro-bewerk { margin-bottom: 16px; padding: 10px 12px; border: 1px solid var(--rand); border-radius: 8px; }
+    .intro-bewerk summary { cursor: pointer; }
+    .werkbalk { display: flex; flex-wrap: wrap; gap: 4px; margin: 12px 0 6px; }
+    .werkbalk button { padding: 4px 10px; font-size: .85rem; border: 1px solid var(--groen); background: #fff; color: var(--groen-donker); }
+    .werkbalk button:hover { background: var(--groen-zacht); }
+    .editor { min-height: 160px; outline: none; border: 2px solid var(--groen); background: #fff; }
+    .editor:focus { border-color: var(--groen-donker); }
+    .intro h3 { margin: .6em 0 .3em; font-size: 1.05rem; color: var(--groen-donker); }
     .knoppen { display: flex; gap: 6px; flex-wrap: wrap; }
     .klein { padding: 4px 10px; font-size: .85rem; font-weight: 600; }
     .knop-gevaar { background: #fff; color: var(--fout); border-color: var(--fout); }
@@ -72,6 +80,29 @@
       <button class="knop-secundair klein" id="sluit-wis">Geen sluitdatum</button>
       <span id="sluit-status" class="samenvatting"></span>
     </div>
+    <details class="intro-bewerk" id="intro-bewerk">
+      <summary><strong>Inleidende tekst bewerken</strong></summary>
+      <div class="werkbalk" id="werkbalk">
+        <button type="button" data-cmd="bold" title="Vet"><b>B</b></button>
+        <button type="button" data-cmd="italic" title="Cursief"><i>I</i></button>
+        <button type="button" data-cmd="underline" title="Onderstreept"><u>U</u></button>
+        <button type="button" data-cmd="formatBlock" data-arg="H3" title="Tussenkop">Kop</button>
+        <button type="button" data-cmd="formatBlock" data-arg="P" title="Gewone alinea">¶</button>
+        <button type="button" data-cmd="insertUnorderedList" title="Opsomming">• Lijst</button>
+        <button type="button" data-cmd="insertOrderedList" title="Genummerde lijst">1. Lijst</button>
+        <button type="button" data-cmd="createLink" title="Link">Link</button>
+        <button type="button" data-cmd="removeFormat" title="Opmaak wissen">Wis opmaak</button>
+        <button type="button" data-cmd="sluitdatum" title="Sluitdatum invoegen">+ Sluitdatum</button>
+      </div>
+      <div id="intro-editor" class="editor intro" contenteditable="true"></div>
+      <p class="samenvatting">Op de plek van <code>{sluitdatum}</code> toont het formulier automatisch de ingestelde sluitdatum.</p>
+      <div class="knoppen">
+        <button type="button" class="knop-primair klein" id="intro-opslaan">Opslaan</button>
+        <button type="button" class="knop-secundair klein" id="intro-herstel">Standaardtekst terugzetten</button>
+        <a class="knop-secundair klein" href="./" target="_blank" rel="noopener" style="text-decoration:none">Formulier bekijken</a>
+        <span id="intro-status" class="samenvatting"></span>
+      </div>
+    </details>
     <div class="kpi" id="kpi"></div>
     <details><summary><strong>Aantal per team</strong></summary><div class="teams" id="teams"></div></details>
     <div class="balk" style="margin-top:16px">
@@ -137,6 +168,7 @@
     data = res.inschrijvingen;
     verwijderd = res.verwijderd || [];
     laadSluitdatum();
+    laadIntro();
     $('#login').classList.add('verborgen');
     $('#beheer').classList.remove('verborgen');
     teken();
@@ -399,6 +431,52 @@
     bewaarKlap(); knopTekst(); teken();
   });
   knopTekst();
+
+  // ---------- inleidende tekst ----------
+  let introGeladen = false;
+  async function laadIntro(forceer) {
+    if (introGeladen && !forceer) return;
+    try {
+      const st = await rpc('formulier_status', {});
+      let h = st && st.intro;
+      $('#intro-status').textContent = h ? '' : 'Standaardtekst (nog niet aangepast).';
+      if (!h) h = await fetch('intro.html', { cache: 'no-cache' }).then(r => r.ok ? r.text() : '');
+      $('#intro-editor').innerHTML = window.vvzSchoon(h);
+      introGeladen = true;
+    } catch (err) { $('#intro-status').textContent = err.message; }
+  }
+  $('#werkbalk').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+  $('#werkbalk').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-cmd]');
+    if (!b) return;
+    $('#intro-editor').focus();
+    const cmd = b.dataset.cmd;
+    if (cmd === 'createLink') {
+      const url = prompt('Adres van de link (https://…):', 'https://');
+      if (url && /^(https?:|mailto:)/i.test(url)) document.execCommand('createLink', false, url);
+    } else if (cmd === 'sluitdatum') {
+      document.execCommand('insertText', false, '{sluitdatum}');
+    } else {
+      document.execCommand(cmd, false, b.dataset.arg || null);
+    }
+  });
+  $('#intro-opslaan').addEventListener('click', async () => {
+    try {
+      const html = window.vvzSchoon($('#intro-editor').innerHTML);
+      const res = await rpc('beheer_zet_intro', { wachtwoord: ww, html });
+      if (!res.ok) throw new Error(res.fout || 'Opslaan mislukt');
+      $('#intro-editor').innerHTML = html;
+      $('#intro-status').textContent = `Opgeslagen om ${new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}. Direct zichtbaar op het formulier.`;
+    } catch (err) { alert(err.message); }
+  });
+  $('#intro-herstel').addEventListener('click', async () => {
+    if (!confirm('Je eigen tekst verwijderen en de standaardtekst terugzetten?')) return;
+    try {
+      const res = await rpc('beheer_zet_intro', { wachtwoord: ww, html: '' });
+      if (!res.ok) throw new Error(res.fout || 'Mislukt');
+      await laadIntro(true);
+    } catch (err) { alert(err.message); }
+  });
 
   // ---------- sluitdatum ----------
   const naarInvoer = (d) => {

@@ -529,8 +529,29 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object(
     'sluitdatum', (select waarde::timestamptz from beheer_instellingen where sleutel = 'sluitdatum'),
     'open', not exists (select 1 from beheer_instellingen
-                        where sleutel = 'sluitdatum' and waarde::timestamptz < now()))
+                        where sleutel = 'sluitdatum' and waarde::timestamptz < now()),
+    'intro', (select waarde from beheer_instellingen where sleutel = 'intro_html'))
 $$;
+
+-- Inleidende tekst (HTML, wordt in de browser opgeschoond); leeg = standaardtekst uit intro.html
+create or replace function public.beheer_zet_intro(wachtwoord text, html text)
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if not beheer_check(wachtwoord) then
+    return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
+  end if;
+  if length(coalesce(html, '')) > 20000 then
+    return jsonb_build_object('ok', false, 'fout', 'De tekst is te lang.');
+  end if;
+  if coalesce(trim(html), '') = '' then
+    delete from beheer_instellingen where sleutel = 'intro_html';
+  else
+    insert into beheer_instellingen (sleutel, waarde) values ('intro_html', html)
+    on conflict (sleutel) do update set waarde = excluded.waarde;
+  end if;
+  return jsonb_build_object('ok', true);
+end $$;
 
 create or replace function public.beheer_zet_sluitdatum(wachtwoord text, sluitdatum timestamptz)
 returns jsonb
@@ -571,7 +592,8 @@ begin
       public.beheer_verwijder_deelnemer(text, uuid),
       public.beheer_zet_taak(text, uuid, boolean),
       public.formulier_status(),
-      public.beheer_zet_sluitdatum(text, timestamptz)
+      public.beheer_zet_sluitdatum(text, timestamptz),
+      public.beheer_zet_intro(text, text)
     to anonymous;
   else
     raise notice 'Rol "anonymous" bestaat nog niet: zet eerst de Data API aan en draai de migratie opnieuw.';
@@ -593,7 +615,8 @@ begin
       public.beheer_verwijder_deelnemer(text, uuid),
       public.beheer_zet_taak(text, uuid, boolean),
       public.formulier_status(),
-      public.beheer_zet_sluitdatum(text, timestamptz)
+      public.beheer_zet_sluitdatum(text, timestamptz),
+      public.beheer_zet_intro(text, text)
     to authenticated;
   end if;
 end $$;
