@@ -22,13 +22,14 @@ Tarieven: vanaf 16 jaar € 19,50, t/m 15 jaar € 12,50. Leeftijd geteld op 12-
 
 1. **Neon**
    - Maak een project aan op <https://console.neon.tech>.
-   - Zet onder *Data API* de Data API aan (kies Neon Auth als provider; die wordt niet gebruikt, maar maakt de rol `anonymous` aan).
+   - Zet onder *Data API* de Data API aan met **Neon Auth** als provider; de site haalt daar een anoniem token op.
    - Kopieer de *API URL* voor de secret `NEON_DATA_API_URL` hieronder.
    - Kopieer de connection string (rol `neondb_owner`) voor de secret hieronder.
 2. **Gmail**: maak een app-wachtwoord aan via <https://myaccount.google.com/apppasswords> (vereist 2-staps­verificatie).
 3. **GitHub Secrets** (*Settings → Secrets and variables → Actions*):
    - `NEON_DATABASE_URL` – connection string van `neondb_owner` (alleen gebruikt door Actions)
    - `NEON_DATA_API_URL` – Data API URL (wordt bij de deploy in `config.js` gezet)
+   - `NEON_AUTH_URL` – Neon Auth URL, nodig voor het anonieme token (`/token/anonymous`)
    - `BEHEER_WACHTWOORD` – wachtwoord voor de beheerpagina
    - `GMAIL_USER` – Gmail-adres van de afzender
    - `GMAIL_APP_PASSWORD` – het app-wachtwoord

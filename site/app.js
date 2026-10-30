@@ -14,16 +14,7 @@
   $('#datum').textContent = C.DATUM_TEKST;
   fetch('intro.html').then(r => r.ok ? r.text() : '').then(h => { $('#intro').innerHTML = h; });
 
-  async function rpc(naam, body) {
-    const r = await fetch(`${C.DATA_API_URL}/rpc/${naam}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(body || {}),
-    });
-    const data = await r.json().catch(() => null);
-    if (!r.ok) throw new Error((data && (data.message || data.hint)) || `Fout ${r.status}`);
-    return data;
-  }
+  const rpc = (naam, body) => window.vvzRpc(naam, body);
 
   rpc('teams').then(t => { if (Array.isArray(t) && t.length) { TEAMS = t; vulTeams(); } }).catch(() => {});
 

@@ -2,6 +2,8 @@
 window.VVZ_CONFIG = {
   // Wordt bij de deploy ingevuld vanuit de GitHub Secret NEON_DATA_API_URL
   DATA_API_URL: '__NEON_DATA_API_URL__',
+  // Neon Auth URL (voor het anonieme token), uit de GitHub Secret NEON_AUTH_URL
+  NEON_AUTH_URL: '__NEON_AUTH_URL__',
 
   WEDSTRIJD: 'FC Utrecht - Fortuna Sittard',
   DATUM_TEKST: 'Zaterdag 12 december 2026, 16:15 uur',
