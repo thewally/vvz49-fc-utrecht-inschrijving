@@ -103,104 +103,72 @@ for (const i of rows) {
   }
 }
 
-// ---------- aanvullende betaalverzoeken ----------
-function verzoekMail(i, v) {
-  const link = betaallink(i, v.bedrag, ' aanvulling');
-  const html = `
-<div style="font-family:Arial,sans-serif;max-width:600px;color:#1f2a1f">
-  <h2 style="color:#1B5E20">Aanvullend betaalverzoek ${WEDSTRIJD}</h2>
-  <p>Beste ${esc(i.voornaam)},</p>
-  <p>Je inschrijving <strong>${esc(i.referentie)}</strong> is aangepast:</p>
-  <p>${esc(v.toelichting)}</p>
-  <p>Het nog te betalen bedrag is <strong>${euro(v.bedrag)}</strong>.</p>
-  <p><a href="${link}" style="background:#2E7D32;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">Betaal ${euro(v.bedrag)} via bunq</a></p>
-  <p>Het totaal van je inschrijving is nu ${euro(i.totaal_bedrag)}.</p>
-  <p>Sportieve groet,<br>VVZ'49</p>
-</div>`;
-  const text = `Beste ${i.voornaam},
-
-Je inschrijving ${i.referentie} voor ${WEDSTRIJD} is aangepast:
-${v.toelichting}
-
-Nog te betalen: ${euro(v.bedrag)}
-Betalen: ${link}
-
-Het totaal van je inschrijving is nu ${euro(i.totaal_bedrag)}.
-
-Sportieve groet,
-VVZ'49`;
-  return { html, text };
-}
-
-const { rows: verzoeken } = await db.query(
-  `select b.*, row_to_json(i) as insc from betaalverzoeken b
-     join inschrijvingen i on i.id = b.inschrijving_id
-    where b.verstuurd_op is null order by b.aangemaakt_op limit 50`);
-console.log(`${verzoeken.length} nieuw(e) betaalverzoek(en)`);
-
-for (const v of verzoeken) {
-  const i = v.insc;
-  const { html, text } = verzoekMail(i, v);
-  try {
-    await transport.sendMail({
-      from: `"${MAIL_FROM_NAME}" <${GMAIL_USER}>`,
-      to: i.email,
-      replyTo: MAIL_REPLY_TO || GMAIL_USER,
-      subject: `Aanvullend betaalverzoek ${WEDSTRIJD} (${i.referentie})`,
-      html, text,
-    });
-    await db.query(`update betaalverzoeken set verstuurd_op = now() where id = $1`, [v.id]);
-    console.log(`Betaalverzoek verstuurd: ${i.referentie} ${v.bedrag}`);
-  } catch (err) {
-    fouten++;
-    console.error(`Betaalverzoek mislukt: ${i.referentie}: ${err.message}`);
+// ---------- mails bij wijzigingen door beheer ----------
+function wijzigingMail(w, insc) {
+  const regels = [];
+  let knop = null;
+  let kop;
+  if (w.soort === 'persoon_toegevoegd') {
+    kop = 'Aanvullend betaalverzoek';
+    regels.push(`Je inschrijving ${w.referentie} voor ${WEDSTRIJD} (${DATUM}) is aangepast.`, w.toelichting,
+                `Het nog te betalen bedrag hiervoor is ${euro(w.bedrag)}.`);
+    knop = { bedrag: w.bedrag, extra: ' aanvulling' };
+    if (insc) regels.push(`Het totaal van je inschrijving is nu ${euro(insc.totaal_bedrag)}.`);
+  } else if (w.soort === 'persoon_verwijderd') {
+    kop = 'Inschrijving aangepast';
+    regels.push(`Je inschrijving ${w.referentie} voor ${WEDSTRIJD} (${DATUM}) is aangepast.`, w.toelichting,
+                `Het nieuwe totaal van je inschrijving is ${euro(w.nieuw_totaal)}.`);
+    if (Number(w.bedrag) > 0) regels.push(`Je hebt ${euro(w.bedrag)} te veel betaald. Dit bedrag wordt in overleg teruggestort.`);
+    if (Number(w.nog_te_betalen) > 0) {
+      regels.push(`Je hebt je inschrijving nog niet betaald. Het te betalen bedrag is nu ${euro(w.nog_te_betalen)}.`);
+      knop = { bedrag: w.nog_te_betalen, extra: '' };
+    }
+  } else {
+    kop = 'Inschrijving verwijderd';
+    regels.push(`Je inschrijving ${w.referentie} voor ${WEDSTRIJD} (${DATUM}) is verwijderd.`);
+    if (Number(w.bedrag) > 0) regels.push(`Je hebt al ${euro(w.bedrag)} betaald. Dit bedrag wordt in overleg teruggestort.`);
   }
-}
-
-// ---------- meldingen bij verwijderen ----------
-function meldingMail(m) {
-  const terug = Number(m.terug) > 0
-    ? (m.soort === 'persoon_verwijderd'
-        ? `Je hebt ${euro(m.terug)} te veel betaald. Dit bedrag wordt in overleg teruggestort.`
-        : `Je hebt al ${euro(m.terug)} betaald. Dit bedrag wordt in overleg teruggestort.`)
-    : '';
-  const isInsc = m.soort === 'inschrijving_verwijderd';
-  const kop = isInsc ? 'Inschrijving verwijderd' : 'Inschrijving aangepast';
-  const regels = isInsc
-    ? [`Je inschrijving ${m.referentie} voor ${WEDSTRIJD} (${DATUM}) is verwijderd.`]
-    : [`Je inschrijving ${m.referentie} voor ${WEDSTRIJD} (${DATUM}) is aangepast.`,
-       m.toelichting, `Het nieuwe totaal van je inschrijving is ${euro(m.nieuw_totaal)}.`];
-  if (terug) regels.push(terug);
   regels.push('Heb je vragen? Beantwoord dan deze mail.');
+
+  const link = knop && betaallink({ voornaam: w.contact_naam, referentie: w.referentie }, knop.bedrag, knop.extra);
   const html = `
 <div style="font-family:Arial,sans-serif;max-width:600px;color:#1f2a1f">
   <h2 style="color:#1B5E20">${kop}</h2>
-  <p>Beste ${esc(m.voornaam)},</p>
+  <p>Beste ${esc(w.voornaam)},</p>
   ${regels.map(r => `<p>${esc(r)}</p>`).join('')}
+  ${link ? `<p><a href="${link}" style="background:#2E7D32;color:#fff;padding:12px 20px;border-radius:6px;text-decoration:none;font-weight:bold">Betaal ${euro(knop.bedrag)} via bunq</a></p>` : ''}
   <p>Sportieve groet,<br>VVZ'49</p>
 </div>`;
-  const text = `Beste ${m.voornaam},\n\n${regels.join('\n\n')}\n\nSportieve groet,\nVVZ'49`;
+  const text = `Beste ${w.voornaam},\n\n${regels.join('\n\n')}${link ? `\n\nBetalen: ${link}` : ''}\n\nSportieve groet,\nVVZ'49`;
   return { kop, html, text };
 }
 
-const { rows: meldingen } = await db.query(
-  `select * from meldingen where verstuurd_op is null order by aangemaakt_op limit 50`);
-console.log(`${meldingen.length} nieuwe melding(en)`);
-for (const m of meldingen) {
-  const { kop, html, text } = meldingMail(m);
+const { rows: wijzigingen } = await db.query(
+  `select w.*, row_to_json(i) as insc from wijzigingen w
+     left join inschrijvingen i on i.id = w.inschrijving_id
+    where w.mail_verstuurd_op is null order by w.aangemaakt_op limit 50`);
+console.log(`${wijzigingen.length} wijziging(en) te mailen`);
+
+for (const w of wijzigingen) {
+  // Betaalverzoek dat inmiddels vervallen is: niet meer versturen
+  if (w.soort === 'persoon_toegevoegd' && w.vervallen) {
+    await db.query(`update wijzigingen set mail_verstuurd_op = now() where id = $1`, [w.id]);
+    continue;
+  }
+  const { kop, html, text } = wijzigingMail(w, w.insc);
   try {
     await transport.sendMail({
       from: `"${MAIL_FROM_NAME}" <${GMAIL_USER}>`,
-      to: m.email,
+      to: w.email,
       replyTo: MAIL_REPLY_TO || GMAIL_USER,
-      subject: `${kop}: ${WEDSTRIJD} (${m.referentie})`,
+      subject: `${kop}: ${WEDSTRIJD} (${w.referentie})`,
       html, text,
     });
-    await db.query(`update meldingen set verstuurd_op = now() where id = $1`, [m.id]);
-    console.log(`Melding verstuurd: ${m.soort} ${m.referentie}`);
+    await db.query(`update wijzigingen set mail_verstuurd_op = now() where id = $1`, [w.id]);
+    console.log(`Mail verstuurd: ${w.soort} ${w.referentie}`);
   } catch (err) {
     fouten++;
-    console.error(`Melding mislukt: ${m.referentie}: ${err.message}`);
+    console.error(`Mail mislukt: ${w.referentie}: ${err.message}`);
   }
 }
 

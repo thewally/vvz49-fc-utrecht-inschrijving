@@ -12,6 +12,8 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
       BEHEER_WACHTWOORD: ${{ secrets.BEHEER_WACHTWOORD }}
+      NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+      NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,3 +35,14 @@ jobs:
           values ('wachtwoord_hash', crypt(:'ww', gen_salt('bf', 10)))
           on conflict (sleutel) do update set waarde = excluded.waarde;
           SQL
+
+      - name: Data API schema-cache verversen
+        if: env.NEON_API_KEY != '' && env.NEON_PROJECT_ID != ''
+        continue-on-error: true
+        run: |
+          npx -y neonctl@latest data-api refresh-schema \
+            --project-id "$NEON_PROJECT_ID" --branch production --database neondb --api-key "$NEON_API_KEY"
+
+      - name: Herinnering schema-cache
+        if: env.NEON_API_KEY == '' || env.NEON_PROJECT_ID == ''
+        run: echo "::warning::Klik in Neon op 'Refresh schema cache' (of zet de secrets NEON_API_KEY en NEON_PROJECT_ID)."

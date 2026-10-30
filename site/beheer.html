@@ -26,6 +26,12 @@
     table.lijst { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: .9rem; }
     table.lijst th, table.lijst td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--rand); }
     table.lijst th { color: var(--grijs); font-weight: 600; }
+    table.wijz { margin-top: 12px; font-size: .85rem; }
+    table.wijz caption { text-align: left; font-weight: 600; color: var(--groen-donker); padding-top: 6px; }
+    .taak { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .taak input { width: 18px; height: 18px; accent-color: var(--groen); }
+    .taak.open-taak { color: #b26a00; }
+    .vervallen { color: var(--grijs); text-decoration: line-through; }
     .teams { font-size: .9rem; columns: 3 180px; margin-bottom: 20px; }
     .knoppen { display: flex; gap: 6px; flex-wrap: wrap; }
     .klein { padding: 4px 10px; font-size: .85rem; font-weight: 600; }
@@ -55,12 +61,16 @@
     <details><summary><strong>Aantal per team</strong></summary><div class="teams" id="teams"></div></details>
     <div class="balk" style="margin-top:16px">
       <input id="zoek" placeholder="Zoek op naam, e-mail of referentie">
-      <select id="filter-betaald"><option value="">Alle inschrijvingen</option><option value="ja">Betaald</option><option value="nee">Nog niet betaald</option></select>
+      <select id="filter-betaald"><option value="">Alle inschrijvingen</option><option value="open">Met open acties</option><option value="klaar">Alles afgehandeld</option></select>
       <select id="filter-team"><option value="">Alle teams</option></select>
       <button class="knop-secundair" id="ververs">Verversen</button>
       <button class="knop-secundair" id="export">CSV-export</button>
     </div>
     <div id="lijst"></div>
+    <section id="verw-sectie" class="verborgen">
+      <h2 style="margin-top:28px">Verwijderde inschrijvingen</h2>
+      <div id="verwijderd"></div>
+    </section>
   </main>
 
   <dialog id="dlg">
@@ -87,6 +97,7 @@
   const naam = (i) => [i.voornaam, i.tussenvoegsel, i.achternaam].filter(Boolean).join(' ');
   let ww = sessionStorageGet();
   let data = [];
+  let verwijderd = [];
 
   $('#sub').textContent = `${C.WEDSTRIJD} · ${C.DATUM_TEKST}`;
 
@@ -100,6 +111,7 @@
     if (!res.ok) { sessionStorageSet(''); throw new Error(res.fout); }
     sessionStorageSet(ww);
     data = res.inschrijvingen;
+    verwijderd = res.verwijderd || [];
     $('#login').classList.add('verborgen');
     $('#beheer').classList.remove('verborgen');
     teken();
@@ -115,14 +127,18 @@
     const alle = data.flatMap(i => i.deelnemers);
     const jong = alle.filter(d => d.categorie === 't/m 15').length;
     const verwacht = data.reduce((s, i) => s + Number(i.totaal_bedrag), 0);
-    const ontvangen = data.reduce((s, i) => s + Number(i.betaald_bedrag || 0), 0);
+    const alleWijz = [...data.flatMap(i => i.wijzigingen || []), ...verwijderd];
+    const openTaak = (w, t) => w.taak === t && !w.afgehandeld && !w.vervallen;
+    const teOntvangen = data.reduce((s, i) => s + (i.betaald ? 0 : Number(i.inschrijf_bedrag)), 0)
+      + alleWijz.filter(w => openTaak(w, 'betalen')).reduce((s, w) => s + Number(w.bedrag), 0);
+    const teRug = alleWijz.filter(w => openTaak(w, 'terugstorten')).reduce((s, w) => s + Number(w.bedrag), 0);
     $('#kpi').innerHTML = `
       <div><span>Inschrijvingen</span><strong>${data.length}</strong></div>
       <div><span>Personen</span><strong>${alle.length}</strong></div>
       <div><span>t/m 15 / vanaf 16</span><strong>${jong} / ${alle.length - jong}</strong></div>
-      <div><span>Verwacht</span><strong>${euro(verwacht)}</strong></div>
-      <div><span>Betaald</span><strong>${euro(ontvangen)}</strong></div>
-      <div><span>Openstaand</span><strong>${euro(verwacht - ontvangen)}</strong></div>`;
+      <div><span>Totaal verwacht</span><strong>${euro(verwacht)}</strong></div>
+      <div><span>Nog te ontvangen</span><strong>${euro(teOntvangen)}</strong></div>
+      <div><span>Nog terug te storten</span><strong>${euro(teRug)}</strong></div>`;
 
     const perTeam = {};
     alle.forEach(d => perTeam[d.team] = (perTeam[d.team] || 0) + 1);
@@ -135,23 +151,21 @@
     const zoek = $('#zoek').value.trim().toLowerCase();
     const fb = $('#filter-betaald').value, ft = $('#filter-team').value;
     const zicht = data.filter(i =>
-      (!fb || (fb === 'ja') === i.betaald) &&
+      (!fb || (fb === 'open') === heeftOpen(i)) &&
       (!ft || i.deelnemers.some(d => d.team === ft)) &&
       (!zoek || [naam(i), i.email, i.referentie, ...i.deelnemers.map(d => d.voornaam + ' ' + d.achternaam)]
         .join(' ').toLowerCase().includes(zoek)));
 
     $('#lijst').innerHTML = zicht.map(i => `
-      <div class="inschr ${i.betaald ? 'betaald' : 'open'}">
+      <div class="inschr ${heeftOpen(i) ? 'open' : 'betaald'}">
         <div class="inschr-kop">
           <div>
             <strong>${esc(naam(i))}</strong> · ${esc(i.referentie)} · <strong>${euro(i.totaal_bedrag)}</strong>
             <div class="meta">${esc(i.email)} · ${esc(i.telefoon)} · ingeschreven ${datum(i.aangemaakt_op)}
-              · mail ${i.bevestiging_verstuurd_op ? 'verstuurd' : 'nog niet verstuurd'}
-              ${Number(i.betaald_bedrag) > 0 && !i.betaald ? `<br>Betaald: ${euro(i.betaald_bedrag)} van ${euro(i.totaal_bedrag)} · open: <strong>${euro(i.totaal_bedrag - i.betaald_bedrag)}</strong>` : ''}
-              ${(i.betaalverzoeken || []).map(b => `<br>Betaalverzoek ${euro(b.bedrag)} (${esc(b.toelichting)}) · ${b.verstuurd_op ? 'verstuurd ' + datum(b.verstuurd_op) : 'in wachtrij'}`).join('')}</div>
+              · bevestiging ${i.bevestiging_verstuurd_op ? 'verstuurd' : 'nog niet verstuurd'}</div>
           </div>
           <div class="knoppen">
-            <label class="betaald-vink"><input type="checkbox" data-id="${i.id}" ${i.betaald ? 'checked' : ''}> Betaald</label>
+            <label class="betaald-vink"><input type="checkbox" data-id="${i.id}" ${i.betaald ? 'checked' : ''}> Inschrijving betaald (${euro(i.inschrijf_bedrag)})</label>
             <button class="knop-secundair klein" data-actie="wijzig-contact" data-insc="${i.id}">Contactpersoon wijzigen</button>
             <button class="knop-secundair klein" data-actie="nieuwe-persoon" data-insc="${i.id}">+ Persoon</button>
             <button class="knop-gevaar klein" data-actie="verwijder-insc" data-insc="${i.id}">Verwijderen</button>
@@ -163,18 +177,64 @@
             <td>${esc(d.team)}</td><td>${esc(d.categorie)} (${euro(d.prijs)})</td>
             <td class="acties-cel"><button class="knop-gevaar klein" data-actie="verwijder-persoon" data-insc="${i.id}" data-dln="${d.id}">Verwijderen</button></td></tr>`).join('')}
         </table>
+        ${wijzTabel(i.wijzigingen)}
       </div>`).join('') || '<p>Geen inschrijvingen gevonden.</p>';
+
+    $('#verw-sectie').classList.toggle('verborgen', !verwijderd.length);
+    const groepen = {};
+    verwijderd.forEach(w => (groepen[w.referentie] = groepen[w.referentie] || []).push(w));
+    $('#verwijderd').innerHTML = Object.values(groepen).map(ws => {
+      ws.sort((a, b) => a.aangemaakt_op.localeCompare(b.aangemaakt_op));
+      const w = ws[ws.length - 1];
+      const open = ws.some(x => x.taak && !x.afgehandeld && !x.vervallen);
+      return `
+      <div class="inschr ${open ? 'open' : 'betaald'}">
+        <div class="inschr-kop"><div>
+          <strong>${esc(w.contact_naam)}</strong> · ${esc(w.referentie)}
+          <div class="meta">${esc(w.email)}${w.telefoon ? ' · ' + esc(w.telefoon) : ''}</div>
+        </div></div>
+        ${wijzTabel(ws)}
+      </div>`; }).join('');
   }
 
-  $('#lijst').addEventListener('change', async (e) => {
-    const cb = e.target.closest('input[type=checkbox][data-id]');
+  function heeftOpen(i) {
+    return (!i.betaald && Number(i.inschrijf_bedrag) > 0) ||
+      (i.wijzigingen || []).some(w => w.taak && !w.afgehandeld && !w.vervallen);
+  }
+
+  function taakCel(w) {
+    if (w.vervallen) return '<span class="vervallen">vervallen</span>';
+    if (!w.taak) return '<span class="samenvatting">geen actie</span>';
+    const label = w.taak === 'betalen' ? 'Betaald' : 'Teruggestort';
+    return `<label class="taak ${w.afgehandeld ? '' : 'open-taak'}"><input type="checkbox" data-taak="${w.id}" ${w.afgehandeld ? 'checked' : ''}>
+      ${label}</label>${w.afgehandeld_op ? ` <span class="samenvatting">${datum(w.afgehandeld_op)}</span>` : ''}`;
+  }
+
+  function wijzTabel(lijst) {
+    if (!lijst || !lijst.length) return '';
+    const soortTekst = { persoon_toegevoegd: 'Ontvangen', persoon_verwijderd: 'Terugstorten', inschrijving_verwijderd: 'Terugstorten' };
+    return `<table class="lijst wijz"><caption>Wijzigingen</caption>
+      <tr><th>Datum</th><th>Wijziging</th><th>Bedrag</th><th>Actie</th><th>Mail</th></tr>
+      ${lijst.map(w => `<tr>
+        <td>${datum(w.aangemaakt_op)}</td>
+        <td class="${w.vervallen ? 'vervallen' : ''}">${esc(w.toelichting)}</td>
+        <td>${w.taak ? `${soortTekst[w.soort]} ${euro(w.bedrag)}` : (w.nieuw_totaal != null ? `nieuw totaal ${euro(w.nieuw_totaal)}` : '')}</td>
+        <td>${taakCel(w)}</td>
+        <td>${w.mail_verstuurd_op ? 'verstuurd' : (w.vervallen && w.soort === 'persoon_toegevoegd' ? '–' : 'in wachtrij')}</td>
+      </tr>`).join('')}
+    </table>`;
+  }
+
+  $('#beheer').addEventListener('change', async (e) => {
+    const cb = e.target.closest('input[type=checkbox][data-id], input[type=checkbox][data-taak]');
     if (!cb) return;
     cb.disabled = true;
     try {
-      const res = await rpc('beheer_zet_betaald', { wachtwoord: ww, inschrijving: cb.dataset.id, is_betaald: cb.checked });
+      const res = cb.dataset.taak
+        ? await rpc('beheer_zet_taak', { wachtwoord: ww, wijziging: cb.dataset.taak, is_afgehandeld: cb.checked })
+        : await rpc('beheer_zet_betaald', { wachtwoord: ww, inschrijving: cb.dataset.id, is_betaald: cb.checked });
       if (!res.ok) throw new Error(res.fout || 'Opslaan mislukt');
-      const i = data.find(x => x.id === cb.dataset.id); i.betaald = cb.checked;
-      teken();
+      await laad();
     } catch (err) { alert(err.message); cb.checked = !cb.checked; cb.disabled = false; }
   });
 
@@ -219,7 +279,7 @@
   const persoonData = () => ({ voornaam: v('p-vn'), achternaam: v('p-an'), geboortedatum: v('p-gd'), team: v('p-tm') });
 
   function terugstortMelding(i, bedrag) {
-    alert(`Er is al betaald. Stort ${euro(bedrag)} handmatig terug.\n` +
+    alert(`Er is al betaald. Stort ${euro(bedrag)} handmatig terug en vink daarna "Teruggestort" aan bij de wijziging.\n` +
       `${i.voornaam} krijgt een mail dat het bedrag in overleg wordt teruggestort.\n\n` +
       `Contactpersoon: ${naam(i)}\nE-mail: ${i.email}\nTelefoon: ${i.telefoon}\nReferentie: ${i.referentie}`);
   }
@@ -250,10 +310,9 @@
           break;
         case 'verwijder-persoon': {
           const laatste = i.deelnemers.length === 1;
-          const betaald = Number(i.betaald_bedrag) > 0;
           if (!confirm(`${d.voornaam} ${d.achternaam} verwijderen?` +
             (laatste ? '\n\nDit is de laatste persoon: de hele inschrijving wordt verwijderd.' : '') +
-            (betaald ? `\n\nLet op: volgens de administratie is er al ${euro(i.betaald_bedrag)} betaald.` : ''))) return;
+            '\n\nDe contactpersoon krijgt hierover een mail.')) return;
           const res = await rpc('beheer_verwijder_deelnemer', { wachtwoord: ww, deelnemer: d.id });
           if (!res.ok) throw new Error(res.fout);
           await laad();
@@ -261,9 +320,8 @@
           break;
         }
         case 'verwijder-insc': {
-          const betaald = Number(i.betaald_bedrag) > 0;
           if (!confirm(`Inschrijving ${i.referentie} van ${naam(i)} (${i.deelnemers.length} personen) verwijderen?` +
-            (betaald ? `\n\nLet op: volgens de administratie is er al ${euro(i.betaald_bedrag)} betaald.` : '') +
+            '\n\nDe contactpersoon krijgt hierover een mail.' +
             '\n\nDit kan niet ongedaan worden gemaakt.')) return;
           const res = await rpc('beheer_verwijder_inschrijving', { wachtwoord: ww, inschrijving: i.id });
           if (!res.ok) throw new Error(res.fout);

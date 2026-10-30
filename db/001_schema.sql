@@ -48,34 +48,61 @@ create table if not exists deelnemers (
 );
 create index if not exists deelnemers_inschrijving_idx on deelnemers (inschrijving_id);
 
-alter table inschrijvingen add column if not exists betaald_bedrag numeric(8,2) not null default 0;
-update inschrijvingen set betaald_bedrag = totaal_bedrag where betaald and betaald_bedrag = 0;
+-- Bedrag van de oorspronkelijke inschrijving (waar het vinkje "Betaald" bij hoort)
+alter table inschrijvingen add column if not exists inschrijf_bedrag numeric(8,2);
 
--- Aanvullende betaalverzoeken (bijv. na het toevoegen van een persoon); verstuurd door de mail-workflow
-create table if not exists betaalverzoeken (
-  id               uuid primary key default gen_random_uuid(),
-  inschrijving_id  uuid not null references inschrijvingen(id) on delete cascade,
-  bedrag           numeric(8,2) not null check (bedrag > 0),
-  toelichting      text not null,
-  aangemaakt_op    timestamptz not null default now(),
-  verstuurd_op     timestamptz
+-- Logboek van wijzigingen door beheer, met eventuele taak (betalen / terugstorten)
+create table if not exists wijzigingen (
+  id                 uuid primary key default gen_random_uuid(),
+  inschrijving_id    uuid references inschrijvingen(id) on delete set null,
+  deelnemer_id       uuid,
+  referentie         text not null,
+  contact_naam       text not null,
+  voornaam           text not null,
+  email              text not null,
+  telefoon           text not null,
+  soort              text not null check (soort in ('persoon_toegevoegd', 'persoon_verwijderd', 'inschrijving_verwijderd')),
+  toelichting        text not null,
+  nieuw_totaal       numeric(8,2),
+  nog_te_betalen     numeric(8,2),
+  bedrag             numeric(8,2) not null default 0,
+  taak               text check (taak in ('betalen', 'terugstorten')),
+  afgehandeld        boolean not null default false,
+  afgehandeld_op     timestamptz,
+  vervallen          boolean not null default false,
+  aangemaakt_op      timestamptz not null default now(),
+  mail_verstuurd_op  timestamptz
 );
-alter table betaalverzoeken enable row level security;
+alter table wijzigingen enable row level security;
+create index if not exists wijzigingen_inschrijving_idx on wijzigingen (inschrijving_id);
 
--- Meldingen bij verwijderen (los van de inschrijving, want die kan weg zijn)
-create table if not exists meldingen (
-  id             uuid primary key default gen_random_uuid(),
-  soort          text not null check (soort in ('inschrijving_verwijderd', 'persoon_verwijderd')),
-  email          text not null,
-  voornaam       text not null,
-  referentie     text not null,
-  toelichting    text,
-  nieuw_totaal   numeric(8,2),
-  terug          numeric(8,2) not null default 0,
-  aangemaakt_op  timestamptz not null default now(),
-  verstuurd_op   timestamptz
-);
-alter table meldingen enable row level security;
+-- Eenmalige overzetting van de eerdere tabellen betaalverzoeken / meldingen
+do $$
+begin
+  if to_regclass('public.betaalverzoeken') is not null then
+    update inschrijvingen i set inschrijf_bedrag = i.totaal_bedrag
+      - coalesce((select sum(b.bedrag) from betaalverzoeken b where b.inschrijving_id = i.id), 0)
+    where inschrijf_bedrag is null;
+    insert into wijzigingen (inschrijving_id, referentie, contact_naam, voornaam, email, telefoon, soort,
+                             toelichting, bedrag, taak, aangemaakt_op, mail_verstuurd_op)
+    select i.id, i.referentie, concat_ws(' ', i.voornaam, i.tussenvoegsel, i.achternaam), i.voornaam, i.email, i.telefoon,
+           'persoon_toegevoegd', b.toelichting, b.bedrag, 'betalen', b.aangemaakt_op, b.verstuurd_op
+      from betaalverzoeken b join inschrijvingen i on i.id = b.inschrijving_id;
+    drop table betaalverzoeken;
+  end if;
+  if to_regclass('public.meldingen') is not null then
+    insert into wijzigingen (referentie, contact_naam, voornaam, email, telefoon, soort, toelichting,
+                             nieuw_totaal, bedrag, taak, aangemaakt_op, mail_verstuurd_op)
+    select m.referentie, m.voornaam, m.voornaam, m.email, '', m.soort,
+           coalesce(m.toelichting, 'Inschrijving verwijderd'), m.nieuw_totaal, m.terug,
+           case when m.terug > 0 then 'terugstorten' end, m.aangemaakt_op, m.verstuurd_op
+      from meldingen m;
+    drop table meldingen;
+  end if;
+end $$;
+update inschrijvingen set inschrijf_bedrag = totaal_bedrag where inschrijf_bedrag is null;
+alter table inschrijvingen drop column if exists betaald_bedrag;
+
 
 create table if not exists beheer_instellingen (
   sleutel  text primary key,
@@ -200,7 +227,7 @@ begin
     v_totaal := v_totaal + vvz_prijs(v_cat);
   end loop;
 
-  update inschrijvingen set totaal_bedrag = v_totaal where id = v_id;
+  update inschrijvingen set totaal_bedrag = v_totaal, inschrijf_bedrag = v_totaal where id = v_id;
 
   return jsonb_build_object(
     'referentie', v_ref,
@@ -245,7 +272,10 @@ begin
     return jsonb_build_object('ok', false, 'fout', 'Onjuist wachtwoord of te veel pogingen. Probeer het later opnieuw.');
   end if;
 
-  return jsonb_build_object('ok', true, 'inschrijvingen', coalesce((
+  return jsonb_build_object('ok', true,
+    'verwijderd', coalesce((select jsonb_agg(to_jsonb(w) order by w.aangemaakt_op desc)
+                            from wijzigingen w where w.inschrijving_id is null), '[]'::jsonb),
+    'inschrijvingen', coalesce((
     select jsonb_agg(jsonb_build_object(
       'id', i.id,
       'referentie', i.referentie,
@@ -258,11 +288,10 @@ begin
       'totaal_bedrag', i.totaal_bedrag,
       'betaald', i.betaald,
       'betaald_op', i.betaald_op,
-      'betaald_bedrag', i.betaald_bedrag,
-      'betaalverzoeken', coalesce((
-        select jsonb_agg(jsonb_build_object('bedrag', b.bedrag, 'toelichting', b.toelichting,
-          'aangemaakt_op', b.aangemaakt_op, 'verstuurd_op', b.verstuurd_op) order by b.aangemaakt_op)
-        from betaalverzoeken b where b.inschrijving_id = i.id), '[]'::jsonb),
+      'inschrijf_bedrag', i.inschrijf_bedrag,
+      'wijzigingen', coalesce((
+        select jsonb_agg(to_jsonb(w) order by w.aangemaakt_op)
+        from wijzigingen w where w.inschrijving_id = i.id), '[]'::jsonb),
       'bevestiging_verstuurd_op', i.bevestiging_verstuurd_op,
       'deelnemers', coalesce((
         select jsonb_agg(jsonb_build_object(
@@ -288,8 +317,7 @@ begin
 
   update inschrijvingen
      set betaald = is_betaald,
-         betaald_op = case when is_betaald then now() else null end,
-         betaald_bedrag = case when is_betaald then totaal_bedrag else 0 end
+         betaald_op = case when is_betaald then now() else null end
    where id = inschrijving;
 
   return jsonb_build_object('ok', found);
@@ -306,6 +334,20 @@ returns void language sql security definer set search_path = public, pg_temp as 
   update inschrijvingen
      set totaal_bedrag = coalesce((select sum(prijs) from deelnemers where inschrijving_id = p_inschrijving), 0)
    where id = p_inschrijving
+$$;
+
+-- Wijziging vastleggen, met een kopie van de contactgegevens (blijft bewaard als de inschrijving weg is)
+create or replace function public.vvz_log(p_insc uuid, p_soort text, p_toelichting text, p_bedrag numeric,
+                                          p_taak text, p_deelnemer uuid default null)
+returns void language sql security definer set search_path = public, pg_temp as $$
+  insert into wijzigingen (inschrijving_id, deelnemer_id, referentie, contact_naam, voornaam, email, telefoon,
+                           soort, toelichting, nieuw_totaal, nog_te_betalen, bedrag, taak)
+  select i.id, p_deelnemer, i.referentie, concat_ws(' ', i.voornaam, i.tussenvoegsel, i.achternaam), i.voornaam,
+         i.email, i.telefoon, p_soort, p_toelichting,
+         case when p_soort = 'persoon_verwijderd' then i.totaal_bedrag end,
+         case when p_soort = 'persoon_verwijderd' and not i.betaald then i.inschrijf_bedrag end,
+         coalesce(p_bedrag, 0), p_taak
+    from inschrijvingen i where i.id = p_insc
 $$;
 
 create or replace function public.beheer_wijzig_inschrijving(wachtwoord text, inschrijving uuid, contact jsonb)
@@ -329,7 +371,7 @@ begin
   return jsonb_build_object('ok', found);
 end $$;
 
--- Persoon toevoegen + betaalverzoek voor het verschil in de wachtrij zetten
+-- Persoon toevoegen: wijziging met taak "betalen" (betaalverzoek gaat per mail)
 create or replace function public.beheer_voeg_deelnemer_toe(wachtwoord text, inschrijving uuid, gegevens jsonb)
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -337,6 +379,7 @@ declare
   v_geb   date;
   v_cat   text;
   v_prijs numeric(6,2);
+  v_id    uuid;
 begin
   if not beheer_check(wachtwoord) then
     return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
@@ -364,76 +407,112 @@ begin
 
   insert into deelnemers (inschrijving_id, voornaam, achternaam, geboortedatum, team, categorie, prijs)
   values (inschrijving, left(trim(gegevens->>'voornaam'), 100), left(trim(gegevens->>'achternaam'), 100),
-          v_geb, gegevens->>'team', v_cat, v_prijs);
+          v_geb, gegevens->>'team', v_cat, v_prijs)
+  returning id into v_id;
 
   perform vvz_herbereken(inschrijving);
-  -- Er staat nu een bedrag open, dus niet meer volledig betaald
-  update inschrijvingen set betaald = false where id = inschrijving;
-
-  insert into betaalverzoeken (inschrijving_id, bedrag, toelichting)
-  values (inschrijving, v_prijs,
-          format('Toegevoegd: %s %s (%s)', trim(gegevens->>'voornaam'), trim(gegevens->>'achternaam'),
-                 case when v_cat = '16+' then 'vanaf 16 jaar' else 't/m 15 jaar' end));
+  perform vvz_log(inschrijving, 'persoon_toegevoegd',
+    format('Toegevoegd: %s %s (%s)', trim(gegevens->>'voornaam'), trim(gegevens->>'achternaam'),
+           case when v_cat = '16+' then 'vanaf 16 jaar' else 't/m 15 jaar' end),
+    v_prijs, 'betalen', v_id);
 
   return jsonb_build_object('ok', true, 'bedrag', v_prijs);
 end $$;
 
--- Persoon verwijderen; is het de laatste, dan verdwijnt de hele inschrijving.
--- Geeft terug hoeveel er (volgens de administratie) handmatig teruggestort moet worden.
+-- Persoon verwijderen. Per persoon:
+--  * toegevoegd met nog open betaalverzoek  -> dat verzoek vervalt, niets terug
+--  * oorspronkelijke persoon, inschrijving nog niet betaald -> te betalen inschrijfbedrag wordt lager
+--  * al betaald -> taak "terugstorten"
+-- Is het de laatste persoon, dan wordt de hele inschrijving verwijderd.
 create or replace function public.beheer_verwijder_deelnemer(wachtwoord text, deelnemer uuid)
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
-  v_insc   uuid;
-  v_naam   text;
+  v_d      deelnemers%rowtype;
   v_i      inschrijvingen%rowtype;
+  v_taak   wijzigingen%rowtype;
   v_terug  numeric(8,2) := 0;
+  v_tekst  text;
 begin
   if not beheer_check(wachtwoord) then
     return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
   end if;
-  delete from deelnemers where id = deelnemer
-    returning inschrijving_id, voornaam || ' ' || achternaam into v_insc, v_naam;
-  if v_insc is null then
+  select * into v_d from deelnemers where id = deelnemer;
+  if v_d.id is null then
     return jsonb_build_object('ok', false, 'fout', 'Persoon niet gevonden.');
   end if;
-
-  if not exists (select 1 from deelnemers where inschrijving_id = v_insc) then
-    select * into v_i from inschrijvingen where id = v_insc;
-    v_terug := v_i.betaald_bedrag;
-    insert into meldingen (soort, email, voornaam, referentie, toelichting, terug)
-    values ('inschrijving_verwijderd', v_i.email, v_i.voornaam, v_i.referentie, 'Verwijderd: ' || v_naam, v_terug);
-    delete from inschrijvingen where id = v_insc;
-    return jsonb_build_object('ok', true, 'inschrijving_verwijderd', true, 'terug', v_terug);
+  if (select count(*) from deelnemers where inschrijving_id = v_d.inschrijving_id) = 1 then
+    return beheer_verwijder_inschrijving(wachtwoord, v_d.inschrijving_id);
   end if;
 
-  perform vvz_herbereken(v_insc);
-  select * into v_i from inschrijvingen where id = v_insc;
-  v_terug := greatest(v_i.betaald_bedrag - v_i.totaal_bedrag, 0);
-  update inschrijvingen
-     set betaald_bedrag = least(betaald_bedrag, totaal_bedrag),
-         betaald = (least(betaald_bedrag, totaal_bedrag) >= totaal_bedrag and betaald_bedrag > 0)
-   where id = v_insc;
-  insert into meldingen (soort, email, voornaam, referentie, toelichting, nieuw_totaal, terug)
-  values ('persoon_verwijderd', v_i.email, v_i.voornaam, v_i.referentie, 'Verwijderd: ' || v_naam, v_i.totaal_bedrag, v_terug);
+  select * into v_i from inschrijvingen where id = v_d.inschrijving_id;
+  select * into v_taak from wijzigingen
+   where deelnemer_id = v_d.id and taak = 'betalen' and not vervallen
+   order by aangemaakt_op desc limit 1;
+  v_tekst := format('Verwijderd: %s %s', v_d.voornaam, v_d.achternaam);
+
+  if v_taak.id is not null and not v_taak.afgehandeld then
+    update wijzigingen set vervallen = true where id = v_taak.id;
+    v_tekst := v_tekst || format(' (betaalverzoek van € %s vervalt)', replace(v_d.prijs::text, '.', ','));
+  elsif v_taak.id is null and not v_i.betaald then
+    update inschrijvingen set inschrijf_bedrag = greatest(inschrijf_bedrag - v_d.prijs, 0) where id = v_i.id;
+  else
+    v_terug := v_d.prijs;
+  end if;
+
+  delete from deelnemers where id = v_d.id;
+  perform vvz_herbereken(v_i.id);
+  perform vvz_log(v_i.id, 'persoon_verwijderd', v_tekst, v_terug,
+                  case when v_terug > 0 then 'terugstorten' end, v_d.id);
   return jsonb_build_object('ok', true, 'inschrijving_verwijderd', false, 'terug', v_terug);
 end $$;
 
+-- Hele inschrijving verwijderen; terug = alles wat (volgens de vinkjes) betaald is, min al geplande terugstortingen
 create or replace function public.beheer_verwijder_inschrijving(wachtwoord text, inschrijving uuid)
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare v_i inschrijvingen%rowtype;
+declare
+  v_i      inschrijvingen%rowtype;
+  v_terug  numeric(8,2);
 begin
   if not beheer_check(wachtwoord) then
     return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
   end if;
-  delete from inschrijvingen where id = inschrijving returning * into v_i;
+  select * into v_i from inschrijvingen where id = inschrijving;
   if v_i.id is null then
     return jsonb_build_object('ok', false, 'fout', 'Inschrijving niet gevonden.');
   end if;
-  insert into meldingen (soort, email, voornaam, referentie, terug)
-  values ('inschrijving_verwijderd', v_i.email, v_i.voornaam, v_i.referentie, v_i.betaald_bedrag);
-  return jsonb_build_object('ok', true, 'terug', v_i.betaald_bedrag);
+
+  v_terug := greatest(
+      (case when v_i.betaald then v_i.inschrijf_bedrag else 0 end)
+    + coalesce((select sum(bedrag) from wijzigingen where inschrijving_id = v_i.id
+                and taak = 'betalen' and afgehandeld and not vervallen), 0)
+    - coalesce((select sum(bedrag) from wijzigingen where inschrijving_id = v_i.id
+                and taak = 'terugstorten' and not vervallen), 0), 0);
+
+  update wijzigingen set vervallen = true
+   where inschrijving_id = v_i.id and taak = 'betalen' and not afgehandeld;
+
+  perform vvz_log(v_i.id, 'inschrijving_verwijderd',
+    format('Inschrijving verwijderd (%s personen)', (select count(*) from deelnemers where inschrijving_id = v_i.id)),
+    v_terug, case when v_terug > 0 then 'terugstorten' end);
+  delete from inschrijvingen where id = v_i.id;
+  return jsonb_build_object('ok', true, 'inschrijving_verwijderd', true, 'terug', v_terug);
+end $$;
+
+-- Taak afvinken (betaald / teruggestort)
+create or replace function public.beheer_zet_taak(wachtwoord text, wijziging uuid, is_afgehandeld boolean)
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if not beheer_check(wachtwoord) then
+    return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
+  end if;
+  update wijzigingen
+     set afgehandeld = is_afgehandeld,
+         afgehandeld_op = case when is_afgehandeld then now() end
+   where id = wijziging and taak is not null and not vervallen;
+  return jsonb_build_object('ok', found);
 end $$;
 
 -- ---------------------------------------------------------------
@@ -456,7 +535,8 @@ begin
       public.beheer_wijzig_inschrijving(text, uuid, jsonb),
       public.beheer_verwijder_inschrijving(text, uuid),
       public.beheer_voeg_deelnemer_toe(text, uuid, jsonb),
-      public.beheer_verwijder_deelnemer(text, uuid)
+      public.beheer_verwijder_deelnemer(text, uuid),
+      public.beheer_zet_taak(text, uuid, boolean)
     to anonymous;
   else
     raise notice 'Rol "anonymous" bestaat nog niet: zet eerst de Data API aan en draai de migratie opnieuw.';
@@ -475,7 +555,8 @@ begin
       public.beheer_wijzig_inschrijving(text, uuid, jsonb),
       public.beheer_verwijder_inschrijving(text, uuid),
       public.beheer_voeg_deelnemer_toe(text, uuid, jsonb),
-      public.beheer_verwijder_deelnemer(text, uuid)
+      public.beheer_verwijder_deelnemer(text, uuid),
+      public.beheer_zet_taak(text, uuid, boolean)
     to authenticated;
   end if;
 end $$;
