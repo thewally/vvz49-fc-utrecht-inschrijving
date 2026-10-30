@@ -54,9 +54,6 @@
       const v = e.target.value;
       $('.categorie', el).textContent = v ? `Tarief: ${categorie(v) === '16+' ? 'vanaf 16 jaar' : 't/m 15 jaar'}` : '';
     });
-    // Achternaam contactpersoon alvast invullen
-    const an = [$('#c-tussenvoegsel').value.trim(), $('#c-achternaam').value.trim()].filter(Boolean).join(' ');
-    if (an) $('.p-achternaam', el).value = an;
     nummer();
   }
   $('#persoon-toevoegen').addEventListener('click', persoonToevoegen);
