@@ -6,7 +6,7 @@
   // Fallback als de teamlijst niet uit de database geladen kan worden
   let TEAMS = ["VVZ'49 1", "VVZ'49 2", "VVZ'49 3", "VVZ'49 4", "VVZ'49 35+", "VVZ'49 45+ 7x7",
     'O23-1', 'O19-1', 'O19-2', 'O17-1', 'O16-1', 'O14-1', 'O14-2', 'O14-6', 'O13-1', 'O13-2',
-    'O12-1', 'O12-2', 'O11-1', 'O11-2', 'O9-1', 'O9-2', 'O8-1', 'O8-2'];
+    'O12-1', 'O12-2', 'O11-1', 'O11-2', 'O9-1', 'O9-2', 'O8-1', 'O8-2', 'Overig'];
 
   const euro = (n) => '€ ' + n.toFixed(2).replace('.', ',');
 

@@ -17,7 +17,8 @@ insert into teams (naam, volgorde) values
   ('O23-1', 7), ('O19-1', 8), ('O19-2', 9), ('O17-1', 10), ('O16-1', 11),
   ('O14-1', 12), ('O14-2', 13), ('O14-6', 14), ('O13-1', 15), ('O13-2', 16),
   ('O12-1', 17), ('O12-2', 18), ('O11-1', 19), ('O11-2', 20),
-  ('O9-1', 21), ('O9-2', 22), ('O8-1', 23), ('O8-2', 24)
+  ('O9-1', 21), ('O9-2', 22), ('O8-1', 23), ('O8-2', 24),
+  ('Overig', 99)
 on conflict (naam) do update set volgorde = excluded.volgorde;
 
 create table if not exists inschrijvingen (
