@@ -12,7 +12,7 @@
 
   $('#titel').textContent = C.WEDSTRIJD;
   $('#datum').textContent = C.DATUM_TEKST;
-  fetch('intro.html').then(r => r.ok ? r.text() : '').then(h => { $('#intro').innerHTML = h; });
+  fetch('intro.html', { cache: 'no-cache' }).then(r => r.ok ? r.text() : '').then(h => { $('#intro').innerHTML = h; });
 
   const rpc = (naam, body) => window.vvzRpc(naam, body);
 
