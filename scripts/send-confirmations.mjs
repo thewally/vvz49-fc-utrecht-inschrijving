@@ -5,6 +5,7 @@
 import pg from 'pg';
 import nodemailer from 'nodemailer';
 import '../site/mail-sjabloon.js';
+import { berekenSaldo } from './saldo.mjs';
 
 const M = globalThis.vvzMail;
 const {
@@ -99,46 +100,62 @@ for (const w of wijzigingen) {
     continue;
   }
 
-  // Huidige deelnemers en wat er nu nog openstaat (inschrijving zelf + open betaalverzoeken)
-  let deelnemers = [], openRegels = [];
+  // Huidige deelnemers en het bedrag dat nu nog verschuldigd is: nieuw totaal min wat al betaald is
+  let deelnemers = [];
+  let saldo = berekenSaldo({ totaal: 0 });
   if (w.inschrijving_id) {
     deelnemers = (await db.query(
       `select voornaam, achternaam, team from deelnemers where inschrijving_id = $1 order by achternaam, voornaam`,
       [w.inschrijving_id])).rows;
-    if (!w.insc_betaald && Number(w.inschrijf_bedrag) > 0) openRegels.push(['Inschrijving', Number(w.inschrijf_bedrag)]);
-    const open = (await db.query(
-      `select toelichting, bedrag from wijzigingen
-        where inschrijving_id = $1 and taak = 'betalen' and not afgehandeld and not vervallen
-        order by aangemaakt_op`, [w.inschrijving_id])).rows;
-    open.forEach(o => openRegels.push([o.toelichting, Number(o.bedrag)]));
+    const { rows: [bet] } = await db.query(
+      `select coalesce(sum(bedrag) filter (where taak = 'betalen'), 0) as betaald,
+              coalesce(sum(bedrag) filter (where taak = 'terugstorten'), 0) as teruggestort
+         from wijzigingen
+        where inschrijving_id = $1 and afgehandeld and not vervallen`, [w.inschrijving_id]);
+    saldo = berekenSaldo({
+      totaal: w.huidig_totaal,
+      inschrijfBetaald: w.insc_betaald,
+      inschrijfBedrag: w.inschrijf_bedrag,
+      betaald: bet.betaald,
+      teruggestort: bet.teruggestort,
+    });
   }
-  const openstaand = openRegels.reduce((t, [, b]) => t + b, 0);
+  const { openstaand } = saldo;
 
-  // Bij verwijderen van de hele inschrijving: alles wat nog teruggestort moet worden
+  // Bij verwijderen van de hele inschrijving: alles wat nog teruggestort moet worden.
+  // Bij een wijziging van deelnemers: het bedrag dat na de wijziging terugkomt (alleen als er te veel betaald is).
   let bedrag = Number(w.bedrag);
+  let terug;
   if (w.soort === 'inschrijving_verwijderd') {
     bedrag = Number((await db.query(
       `select coalesce(sum(bedrag), 0) as s from wijzigingen
         where referentie = $1 and taak = 'terugstorten' and not afgehandeld and not vervallen`, [w.referentie])).rows[0].s);
+    terug = bedrag;
+  } else {
+    terug = saldo.terug;
+    if (terug > 0) bedrag = terug;
   }
 
+  const verschilRij = saldo.verschil < 0
+    ? ['Terug te ontvangen', euro(saldo.terug)]
+    : ['Nog te betalen', euro(saldo.openstaand)];
   const vars = {
     voornaam: w.voornaam, contactpersoon: w.contact_naam, referentie: w.referentie,
     wedstrijd: WEDSTRIJD, datum: DATUM, toelichting: w.toelichting,
-    bedrag: euro(bedrag), terug: euro(bedrag),
+    bedrag: euro(bedrag), terug: euro(terug),
     totaal: euro(w.soort === 'persoon_verwijderd' ? w.nieuw_totaal : (w.huidig_totaal ?? 0)),
     openstaand: euro(openstaand),
     nog_te_betalen: euro(openstaand),
     deelnemers: M.tabel(deelnemers.map(d => [`${d.voornaam} ${d.achternaam}`, d.team])),
-    specificatie: openRegels.length
-      ? M.tabel(openRegels.map(([t, b]) => [t, euro(b)]), ['Nog te betalen', euro(openstaand)])
+    specificatie: w.inschrijving_id
+      ? M.tabel([['Nieuw totaal van de inschrijving', euro(saldo.totaal)], ['Al betaald', euro(saldo.ontvangen)]], verschilRij)
       : { html: '' },
     betaalknop: openstaand > 0
       ? M.betaalknop(betaallink(w.contact_naam, w.referentie, openstaand), euro(openstaand))
       : { html: '' },
   };
   const aan = {
-    terug: (w.taak === 'terugstorten' || w.soort === 'inschrijving_verwijderd') && bedrag > 0,
+    terug: terug > 0,
     openstaand: openstaand > 0,
     nog_te_betalen: openstaand > 0,
   };

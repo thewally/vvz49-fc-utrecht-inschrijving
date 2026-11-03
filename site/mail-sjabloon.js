@@ -3,6 +3,13 @@
 globalThis.vvzMail = (() => {
   const groet = '<p>Heb je vragen? Beantwoord dan deze mail.</p><p>Sportieve groet,<br>VVZ\'49 - Jeugd Activiteiten Commissie</p>';
 
+  // Gedeeld blok voor mails bij een wijziging: het ene bedrag na de wijziging (nog te betalen of terug)
+  const betaalblok =
+    '<h3>Betaling</h3><p>{specificatie}</p>' +
+    '<p>{#openstaand}Het nog te betalen bedrag is <strong>{openstaand}</strong>.{/openstaand}' +
+    '{#terug}Je krijgt nog <strong>{bedrag}</strong> terug. Dit bedrag wordt in overleg teruggestort.{/terug}</p>' +
+    '<p>{#openstaand}{betaalknop}{/openstaand}</p>';
+
   const SOORTEN = {
     bevestiging: {
       naam: 'Bevestiging inschrijving',
@@ -21,10 +28,9 @@ globalThis.vvzMail = (() => {
       html: '<p>Beste {voornaam},</p>' +
         '<p>Je inschrijving {referentie} voor {wedstrijd} ({datum}) is aangepast:</p><p>{toelichting}</p>' +
         '<h3>Ingeschreven deelnemers</h3><p>{deelnemers}</p>' +
-        '<h3>Te betalen</h3><p>{specificatie}</p>' +
-        '<p>Het nog te betalen bedrag is <strong>{openstaand}</strong>.</p><p>{betaalknop}</p>' + groet,
+        betaalblok + groet,
       variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'toelichting', 'deelnemers', 'specificatie', 'openstaand', 'bedrag', 'totaal', 'betaalknop'],
-      voorwaarden: ['openstaand'],
+      voorwaarden: ['openstaand', 'terug'],
     },
     persoon_verwijderd: {
       naam: 'Deelnemer verwijderd',
@@ -32,9 +38,7 @@ globalThis.vvzMail = (() => {
       html: '<p>Beste {voornaam},</p>' +
         '<p>Je inschrijving {referentie} voor {wedstrijd} ({datum}) is aangepast:</p><p>{toelichting}</p>' +
         '<h3>Ingeschreven deelnemers</h3><p>{deelnemers}</p>' +
-        '<h3>{#openstaand}Nog te betalen{/openstaand}</h3><p>{#openstaand}{specificatie}{/openstaand}</p>' +
-        '<p>{#openstaand}{betaalknop}{/openstaand}</p>' +
-        '<p>{#terug}Je krijgt nog {bedrag} terug. Dit bedrag wordt in overleg teruggestort.{/terug}</p>' + groet,
+        betaalblok + groet,
       variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'toelichting', 'deelnemers', 'specificatie', 'openstaand', 'bedrag', 'totaal', 'betaalknop'],
       voorwaarden: ['openstaand', 'terug'],
     },
@@ -53,10 +57,11 @@ globalThis.vvzMail = (() => {
     voornaam: 'Voornaam contactpersoon', contactpersoon: 'Volledige naam contactpersoon', referentie: 'Referentie (VVZ-12345)',
     wedstrijd: 'Wedstrijd', datum: 'Datum en tijd wedstrijd', totaal: 'Totaalbedrag inschrijving',
     deelnemers: 'Tabel met alle huidige deelnemers en teams',
-    specificatie: 'Tabel met bedragen (bij wijzigingen: alleen wat nog openstaat)',
+    specificatie: 'Tabel met bedragen (bij wijzigingen: nieuw totaal, al betaald en het verschil)',
     betaalknop: 'Groene bunq-betaalknop voor het openstaande bedrag',
-    toelichting: 'Wat er gewijzigd is', bedrag: 'Bedrag van deze wijziging (betaalverzoek of terug te storten bedrag)',
-    openstaand: 'Totaal nog te betalen bedrag', terug: 'Terug te storten bedrag',
+    toelichting: 'Wat er gewijzigd is',
+    bedrag: 'Bij een wijziging: het bedrag dat je terugkrijgt (alleen bij terug). Bij inschrijving verwijderd: het terug te storten bedrag',
+    openstaand: 'Bedrag dat na de wijziging nog verschuldigd is (nieuw totaal min al betaald)', terug: 'Terug te storten bedrag',
   };
 
   const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
