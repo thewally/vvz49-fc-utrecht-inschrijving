@@ -16,7 +16,13 @@
     timeZone: 'Europe/Amsterdam', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit' }).replace(/ om /, ' ').replace(/(\d{2}:\d{2})$/, 'om $1 uur');
   let sluitdatum = null;
-  const vulSluitdatum = () => { if (sluitdatum) $$('[data-sluitdatum]').forEach(el => el.textContent = datumTijd(sluitdatum)); };
+  const vulSluitdatum = () => {
+    if (!sluitdatum) return;
+    $$('[data-sluitdatum]').forEach(el => el.textContent = datumTijd(sluitdatum));
+    // Ook in de kopregel van de ingeklapte toelichting, zodat de deadline altijd zichtbaar is
+    const kop = $('#intro-sluit');
+    if (kop) kop.textContent = ` · Inschrijven kan tot ${datumTijd(sluitdatum)}`;
+  };
 
   async function toonIntro(dbIntro) {
     let h = dbIntro;
