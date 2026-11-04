@@ -142,7 +142,7 @@ for (const w of wijzigingen) {
   const vars = {
     voornaam: w.voornaam, contactpersoon: w.contact_naam, referentie: w.referentie,
     wedstrijd: WEDSTRIJD, datum: DATUM, toelichting: w.toelichting,
-    bedrag: euro(bedrag), terug: euro(terug),
+    bedrag: euro(bedrag), terug: euro(terug), ontvangen: euro(w.bedrag),
     totaal: euro(w.soort === 'persoon_verwijderd' ? w.nieuw_totaal : (w.huidig_totaal ?? 0)),
     openstaand: euro(openstaand),
     nog_te_betalen: euro(openstaand),

@@ -621,8 +621,12 @@
       deelnemers: M.tabel([['Jan de Vries', 'VVZ\'49 45+ 7x7'], ['Piet de Vries', 'O14-6']]),
       specificatie: M.tabel([['1× t/m 15 jaar à € 12,50', euro(12.5)], ['1× vanaf 16 jaar à € 19,50', euro(19.5)]], ['Totaal', euro(32)]),
       betaalknop: M.betaalknop(link, euro(32)),
+      ontvangen: euro(19.5),
     };
-    if (k !== 'bevestiging') {
+    if (k === 'betaling_ontvangen') {
+      vars.specificatie = M.tabel([['Nieuw totaal van de inschrijving', euro(32)], ['Al betaald', euro(19.5)]], ['Nog te betalen', euro(12.5)]);
+      vars.betaalknop = M.betaalknop(link, euro(12.5));
+    } else if (k !== 'bevestiging') {
       vars.specificatie = M.tabel([['Toegevoegd: Piet de Vries (t/m 15 jaar)', euro(12.5)]], ['Nog te betalen', euro(12.5)]);
       vars.betaalknop = M.betaalknop(link, euro(12.5));
     }
