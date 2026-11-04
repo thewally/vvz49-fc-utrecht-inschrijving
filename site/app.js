@@ -16,12 +16,23 @@
     timeZone: 'Europe/Amsterdam', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
     hour: '2-digit', minute: '2-digit' }).replace(/ om /, ' ').replace(/(\d{2}:\d{2})$/, 'om $1 uur');
   let sluitdatum = null;
+  let introKop = null;
+  const STANDAARD_KOP = 'Toelichting bij deze inschrijving';
+  const STANDAARD_KOP_MET_DATUM = `${STANDAARD_KOP} · Inschrijven kan tot {sluitdatum}`;
+  // Kopregel boven de ingeklapte toelichting: eigen tekst uit beheer of de standaard.
+  // {sluitdatum} wordt vervangen. Staat {sluitdatum} in de tekst maar is er geen sluitdatum,
+  // dan tonen we de standaardkop (anders een halve zin). Alleen platte tekst (textContent).
+  const vulKop = () => {
+    const kop = $('#intro-kop');
+    if (!kop) return;
+    const eigen = introKop && (sluitdatum || !/\{sluitdatum\}/.test(introKop)) ? introKop : null;
+    const tekst = eigen || (sluitdatum ? STANDAARD_KOP_MET_DATUM : STANDAARD_KOP);
+    kop.textContent = tekst.replace(/\{sluitdatum\}/g, sluitdatum ? datumTijd(sluitdatum) : '');
+  };
   const vulSluitdatum = () => {
+    vulKop();
     if (!sluitdatum) return;
     $$('[data-sluitdatum]').forEach(el => el.textContent = datumTijd(sluitdatum));
-    // Ook in de kopregel van de ingeklapte toelichting, zodat de deadline altijd zichtbaar is
-    const kop = $('#intro-sluit');
-    if (kop) kop.textContent = ` · Inschrijven kan tot ${datumTijd(sluitdatum)}`;
   };
 
   async function toonIntro(dbIntro) {
@@ -36,6 +47,7 @@
 
   rpc('formulier_status').then(st => {
     sluitdatum = st && st.sluitdatum;
+    introKop = st && st.intro_kop;
     toonIntro(st && st.intro);
     if (st && st.open === false) {
       $('#formulier').classList.add('verborgen');
