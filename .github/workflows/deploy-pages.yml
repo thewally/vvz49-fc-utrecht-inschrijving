@@ -27,14 +27,14 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Data API URL invullen vanuit secret
         env:
           NEON_DATA_API_URL: ${{ secrets.NEON_DATA_API_URL }}
         run: |
           if [ -z "$NEON_DATA_API_URL" ]; then echo "::error::Secret NEON_DATA_API_URL ontbreekt"; exit 1; fi
           sed -i "s|__NEON_DATA_API_URL__|${NEON_DATA_API_URL%/}|" site/config.js
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: JWKS en anoniem token maken
@@ -48,9 +48,9 @@ jobs:
           v="${GITHUB_SHA::7}"
           sed -i -E "s#(src|href)=\"(config|api|app|mail-sjabloon)\.js\"#\1=\"\2.js?v=$v\"#g; s#href=\"style\.css\"#href=\"style.css?v=$v\"#g" site/*.html
           grep -o '[a-z]*\.\(js\|css\)?v=[0-9a-f]*' site/*.html
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

@@ -16,7 +16,7 @@ jobs:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       NEON_PROJECT_ID: ${{ secrets.NEON_PROJECT_ID }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Postgres-client installeren
         run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
