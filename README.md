@@ -12,6 +12,7 @@ Inschrijfformulier en beheerpagina voor de clubuitje naar **FC Utrecht - Fortuna
 | `site/` | Statische site op GitHub Pages (formulier + beheer) |
 | `db/001_schema.sql` | Tabellen, prijslogica en functies in Neon |
 | `db/002_betaling_mail.sql` | Mail "Betaling ontvangen" bij aanvinken van Betaald; draait na 001 (`migrate.yml` voert `db/*.sql` op volgorde uit) |
+| `db/003_intro_kop.sql` | Instelbare koptekst boven de ingeklapte toelichting; draait na 001 en 002 |
 | Neon Data API | De site roept alleen de functies `teams`, `registreer`, `beheer_overzicht` en `beheer_zet_betaald` aan. Tabellen zijn niet direct leesbaar. |
 | `send-mails.yml` | Elke ~5 minuten: bevestigingsmail via Gmail naar nieuwe inschrijvers |
 | `migrate.yml` | Voert de SQL uit en zet het beheerwachtwoord |

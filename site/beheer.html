@@ -87,6 +87,16 @@
     </div>
     <details class="intro-bewerk" id="intro-bewerk">
       <summary><strong>Inleidende tekst bewerken</strong></summary>
+      <div class="veld"><label for="kop-invoer">Koptekst (de regel boven de ingeklapte toelichting)</label>
+        <input id="kop-invoer" maxlength="200" autocomplete="off"></div>
+      <p class="samenvatting">Gewone tekst, maximaal 200 tekens. Op de plek van <code>{sluitdatum}</code> toont het formulier de ingestelde sluitdatum. Staat <code>{sluitdatum}</code> in de tekst maar is er geen sluitdatum ingesteld, dan toont het formulier de standaardkop.</p>
+      <div class="knoppen">
+        <button type="button" class="knop-secundair klein" id="kop-sluitdatum">+ Sluitdatum</button>
+        <button type="button" class="knop-primair klein" id="kop-opslaan">Opslaan</button>
+        <button type="button" class="knop-secundair klein" id="kop-herstel">Standaardtekst terugzetten</button>
+        <span id="kop-status" class="samenvatting"></span>
+      </div>
+      <p><strong>Toelichting zelf</strong></p>
       <div class="werkbalk">
         <button type="button" data-cmd="bold" title="Vet"><b>B</b></button>
         <button type="button" data-cmd="italic" title="Cursief"><i>I</i></button>
@@ -504,11 +514,15 @@
   knopTekst();
 
   // ---------- inleidende tekst ----------
+  const STANDAARD_KOP = 'Toelichting bij deze inschrijving · Inschrijven kan tot {sluitdatum}';
   let introGeladen = false;
   async function laadIntro(forceer) {
     if (introGeladen && !forceer) return;
     try {
       const st = await rpc('formulier_status', {});
+      const kop = st && st.intro_kop;
+      $('#kop-invoer').value = kop || STANDAARD_KOP;
+      $('#kop-status').textContent = kop ? '' : 'Standaardtekst (nog niet aangepast).';
       let h = st && st.intro;
       $('#intro-status').textContent = h ? '' : 'Standaardtekst (nog niet aangepast).';
       if (!h) h = await fetch('intro.html', { cache: 'no-cache' }).then(r => r.ok ? r.text() : '');
@@ -530,6 +544,32 @@
     } else {
       document.execCommand(cmd, false, b.dataset.arg || null);
     }
+  });
+  $('#kop-sluitdatum').addEventListener('click', () => {
+    const el = $('#kop-invoer'), a = el.selectionStart ?? el.value.length, b = el.selectionEnd ?? a;
+    el.value = el.value.slice(0, a) + '{sluitdatum}' + el.value.slice(b);
+    el.focus(); el.selectionStart = el.selectionEnd = a + '{sluitdatum}'.length;
+  });
+  async function bewaarKop(tekst) {
+    const res = await rpc('beheer_zet_intro_kop', { wachtwoord: ww, kop: tekst });
+    if (!res.ok) throw new Error(res.fout || 'Opslaan mislukt');
+  }
+  $('#kop-opslaan').addEventListener('click', async () => {
+    try {
+      const v = $('#kop-invoer').value.trim();
+      await bewaarKop(v === STANDAARD_KOP ? '' : v);   // de standaardtekst bewaren we als "niet aangepast"
+      $('#kop-status').textContent = !v || v === STANDAARD_KOP ? 'Standaardtekst.' :
+        `Opgeslagen om ${new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}. Direct zichtbaar op het formulier.`;
+      if (!v) $('#kop-invoer').value = STANDAARD_KOP;
+    } catch (err) { alert(err.message); }
+  });
+  $('#kop-herstel').addEventListener('click', async () => {
+    if (!confirm('Je eigen koptekst verwijderen en de standaardtekst terugzetten?')) return;
+    try {
+      await bewaarKop('');
+      $('#kop-invoer').value = STANDAARD_KOP;
+      $('#kop-status').textContent = 'Standaardtekst (nog niet aangepast).';
+    } catch (err) { alert(err.message); }
   });
   $('#intro-opslaan').addEventListener('click', async () => {
     try {
