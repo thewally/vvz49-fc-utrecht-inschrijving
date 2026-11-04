@@ -61,7 +61,7 @@ create table if not exists wijzigingen (
   voornaam           text not null,
   email              text not null,
   telefoon           text not null,
-  soort              text not null check (soort in ('persoon_toegevoegd', 'persoon_verwijderd', 'inschrijving_verwijderd', 'betaling_ontvangen')),
+  soort              text not null check (soort in ('persoon_toegevoegd', 'persoon_verwijderd', 'inschrijving_verwijderd')),
   toelichting        text not null,
   nieuw_totaal       numeric(8,2),
   nog_te_betalen     numeric(8,2),
@@ -75,11 +75,6 @@ create table if not exists wijzigingen (
 );
 alter table wijzigingen enable row level security;
 create index if not exists wijzigingen_inschrijving_idx on wijzigingen (inschrijving_id);
-
--- Mailsoort "betaling_ontvangen" (bestaande installaties: de oude check vervangen)
-alter table wijzigingen drop constraint if exists wijzigingen_soort_check;
-alter table wijzigingen add constraint wijzigingen_soort_check
-  check (soort in ('persoon_toegevoegd', 'persoon_verwijderd', 'inschrijving_verwijderd', 'betaling_ontvangen'));
 
 -- Eenmalige overzetting van de eerdere tabellen betaalverzoeken / meldingen
 do $$
@@ -320,18 +315,9 @@ end $$;
 create or replace function public.beheer_zet_betaald(wachtwoord text, inschrijving uuid, is_betaald boolean)
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare
-  v_was    boolean;
-  v_bedrag numeric(8,2);
 begin
   if not beheer_check(wachtwoord) then
     return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
-  end if;
-
-  select betaald, inschrijf_bedrag into v_was, v_bedrag
-    from inschrijvingen where id = inschrijving for update;
-  if not found then
-    return jsonb_build_object('ok', false);
   end if;
 
   update inschrijvingen
@@ -339,13 +325,7 @@ begin
          betaald_op = case when is_betaald then now() else null end
    where id = inschrijving;
 
-  -- Aanvinken (niet uitvinken): de contactpersoon krijgt een mail dat de betaling is ontvangen
-  if is_betaald and not v_was and coalesce(v_bedrag, 0) > 0 then
-    perform vvz_log(inschrijving, 'betaling_ontvangen',
-                    format('Betaling van € %s ontvangen', replace(v_bedrag::text, '.', ',')), v_bedrag, null);
-  end if;
-
-  return jsonb_build_object('ok', true);
+  return jsonb_build_object('ok', found);
 end $$;
 
 -- ---------------------------------------------------------------
@@ -529,31 +509,15 @@ end $$;
 create or replace function public.beheer_zet_taak(wachtwoord text, wijziging uuid, is_afgehandeld boolean)
 returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare
-  v_w wijzigingen%rowtype;
 begin
   if not beheer_check(wachtwoord) then
     return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
   end if;
-  select * into v_w from wijzigingen
-   where id = wijziging and taak is not null and not vervallen for update;
-  if v_w.id is null then
-    return jsonb_build_object('ok', false);
-  end if;
-
   update wijzigingen
      set afgehandeld = is_afgehandeld,
          afgehandeld_op = case when is_afgehandeld then now() end
-   where id = wijziging;
-
-  -- Betaling van een aanvullend betaalverzoek aangevinkt: mail dat de betaling is ontvangen
-  if is_afgehandeld and not v_w.afgehandeld and v_w.taak = 'betalen'
-     and v_w.bedrag > 0 and v_w.inschrijving_id is not null then
-    perform vvz_log(v_w.inschrijving_id, 'betaling_ontvangen',
-                    format('Betaling van € %s ontvangen', replace(v_w.bedrag::text, '.', ',')), v_w.bedrag, null);
-  end if;
-
-  return jsonb_build_object('ok', true);
+   where id = wijziging and taak is not null and not vervallen;
+  return jsonb_build_object('ok', found);
 end $$;
 
 -- ---------------------------------------------------------------
@@ -627,7 +591,7 @@ begin
   if not beheer_check(wachtwoord) then
     return jsonb_build_object('ok', false, 'fout', 'Niet ingelogd.');
   end if;
-  if soort not in ('bevestiging', 'persoon_toegevoegd', 'persoon_verwijderd', 'inschrijving_verwijderd', 'betaling_ontvangen') then
+  if soort not in ('bevestiging', 'persoon_toegevoegd', 'persoon_verwijderd', 'inschrijving_verwijderd') then
     return jsonb_build_object('ok', false, 'fout', 'Onbekende mailsoort.');
   end if;
   if length(coalesce(html, '')) > 20000 or length(coalesce(onderwerp, '')) > 300 then
