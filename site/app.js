@@ -145,7 +145,6 @@
   function gaNaar(n) {
     const huidige = $(`section[data-stap="${stap}"]`);
     if (n > stap && !controleer(huidige)) return;
-    if (n === 2 && !$('#personen .persoon')) persoonToevoegen();
     if (n === 3) toonOverzicht();
     stap = n;
     $$('section[data-stap]').forEach(s => s.classList.toggle('verborgen', +s.dataset.stap !== n));
@@ -181,5 +180,6 @@
     }
   });
 
+  persoonToevoegen();   // het formulier begint met een leeg deelnemersblok
   gaNaar(1);
 })();
