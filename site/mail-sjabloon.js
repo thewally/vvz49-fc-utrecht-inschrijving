@@ -22,6 +22,19 @@ globalThis.vvzMail = (() => {
       variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'totaal', 'deelnemers', 'specificatie', 'betaalknop'],
       voorwaarden: [],
     },
+    betaling_ontvangen: {
+      naam: 'Betaling ontvangen',
+      onderwerp: 'Betaling ontvangen {wedstrijd} ({referentie})',
+      html: '<p>Beste {voornaam},</p>' +
+        '<p>Bedankt! We hebben je betaling van <strong>{ontvangen}</strong> voor <strong>{wedstrijd}</strong> op {datum} ontvangen. Je referentie is <strong>{referentie}</strong>.</p>' +
+        '<h3>Ingeschreven deelnemers</h3><p>{deelnemers}</p>' +
+        '<h3>Betaling</h3><p>{specificatie}</p>' +
+        '<p>{#openstaand}Er staat nog <strong>{openstaand}</strong> open.{/openstaand}' +
+        '{#terug}Er is <strong>{terug}</strong> te veel betaald. Dit bedrag wordt in overleg teruggestort.{/terug}</p>' +
+        '<p>{#openstaand}{betaalknop}{/openstaand}</p>' + groet,
+      variabelen: ['voornaam', 'contactpersoon', 'referentie', 'wedstrijd', 'datum', 'ontvangen', 'deelnemers', 'specificatie', 'openstaand', 'terug', 'totaal', 'betaalknop'],
+      voorwaarden: ['openstaand', 'terug'],
+    },
     persoon_toegevoegd: {
       naam: 'Aanvullend betaalverzoek (deelnemer toegevoegd)',
       onderwerp: 'Aanvullend betaalverzoek {wedstrijd} ({referentie})',
@@ -60,6 +73,7 @@ globalThis.vvzMail = (() => {
     specificatie: 'Tabel met bedragen (bij wijzigingen: nieuw totaal, al betaald en het verschil)',
     betaalknop: 'Groene bunq-betaalknop voor het openstaande bedrag',
     toelichting: 'Wat er gewijzigd is',
+    ontvangen: 'Het bedrag van de betaling die zojuist is ontvangen',
     bedrag: 'Bij een wijziging: het bedrag dat je terugkrijgt (alleen bij terug). Bij inschrijving verwijderd: het terug te storten bedrag',
     openstaand: 'Bedrag dat na de wijziging nog verschuldigd is (nieuw totaal min al betaald)', terug: 'Terug te storten bedrag',
   };
