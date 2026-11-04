@@ -18,6 +18,7 @@
     .balk { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; align-items: center; }
     .balk input, .balk select { width: auto; flex: 1; min-width: 160px; }
     .inschr { border: 1px solid var(--rand); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; }
+    .inschr { overflow-x: auto; }
     .inschr.betaald { border-left: 6px solid var(--groen); }
     .inschr.open { border-left: 6px solid #f9a825; }
     .inschr-kop { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
@@ -61,6 +62,15 @@
     dialog { border: none; border-radius: 10px; padding: 20px; width: min(520px, calc(100vw - 32px)); }
     dialog::backdrop { background: rgba(0,0,0,.4); }
     dialog h2 { margin-top: 0; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--groen); }
+    .tabs button { font: inherit; font-weight: 600; padding: 8px 14px; border: 2px solid transparent; border-bottom: none;
+                   border-radius: 8px 8px 0 0; background: none; color: var(--groen-donker); cursor: pointer; }
+    .tabs button:hover { background: var(--groen-zacht); }
+    .tabs button[aria-selected="true"] { background: var(--groen); color: #fff; }
+    .tabs button:focus-visible { outline: 3px solid var(--groen-donker); outline-offset: 1px; }
+    .sec-kop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+    table.contacten td.getal, table.contacten th.getal { text-align: right; }
+    #contacten { overflow-x: auto; }
   </style>
 </head>
 <body>
@@ -78,6 +88,40 @@
   </form>
 
   <main id="beheer" class="verborgen">
+    <nav class="tabs" role="tablist" aria-label="Beheer">
+      <button type="button" role="tab" id="tab-statistieken" data-tab="statistieken" aria-controls="sec-statistieken">Statistieken</button>
+      <button type="button" role="tab" id="tab-inschrijvingen" data-tab="inschrijvingen" aria-controls="sec-inschrijvingen">Inschrijvingen</button>
+      <button type="button" role="tab" id="tab-contactpersonen" data-tab="contactpersonen" aria-controls="sec-contactpersonen">Contactpersonen</button>
+      <button type="button" role="tab" id="tab-instellingen" data-tab="instellingen" aria-controls="sec-instellingen">Instellingen</button>
+    </nav>
+    <section id="sec-statistieken" role="tabpanel" aria-labelledby="tab-statistieken" class="verborgen">
+    <div class="kpi" id="kpi"></div>
+    <h2 style="font-size:1.1rem;margin:0 0 8px">Aantal per team</h2>
+    <div class="teams" id="teams"></div>
+    </section>
+    <section id="sec-inschrijvingen" role="tabpanel" aria-labelledby="tab-inschrijvingen">
+    <div class="balk">
+      <input id="zoek" placeholder="Zoek op naam, e-mail of referentie">
+      <select id="filter-betaald"><option value="">Alle inschrijvingen</option><option value="open">Open acties</option><option value="klaar">Afgehandeld</option></select>
+      <select id="filter-team"><option value="">Alle teams</option></select>
+      <button class="knop-secundair" id="ververs">Verversen</button>
+      <button class="knop-secundair" id="export">CSV-export</button>
+      <button class="knop-secundair" id="klap-alles">Alles inklappen</button>
+    </div>
+    <div id="lijst"></div>
+    <section id="verw-sectie" class="verborgen">
+      <h2 style="margin-top:28px">Verwijderde inschrijvingen</h2>
+      <div id="verwijderd"></div>
+    </section>
+    </section>
+    <section id="sec-contactpersonen" role="tabpanel" aria-labelledby="tab-contactpersonen" class="verborgen">
+    <div class="balk">
+      <input id="zoek-contact" placeholder="Zoek op naam of e-mail">
+      <button class="knop-secundair" id="export-contact">CSV-export</button>
+    </div>
+    <div id="contacten"></div>
+    </section>
+    <section id="sec-instellingen" role="tabpanel" aria-labelledby="tab-instellingen" class="verborgen">
     <div class="sluit">
       <label for="sluitdatum"><strong>Inschrijving open tot</strong></label>
       <input id="sluitdatum" type="datetime-local">
@@ -146,20 +190,6 @@
         <span id="mail-status" class="samenvatting"></span>
       </div>
     </details>
-    <div class="kpi" id="kpi"></div>
-    <details><summary><strong>Aantal per team</strong></summary><div class="teams" id="teams"></div></details>
-    <div class="balk" style="margin-top:16px">
-      <input id="zoek" placeholder="Zoek op naam, e-mail of referentie">
-      <select id="filter-betaald"><option value="">Alle inschrijvingen</option><option value="open">Open acties</option><option value="klaar">Afgehandeld</option></select>
-      <select id="filter-team"><option value="">Alle teams</option></select>
-      <button class="knop-secundair" id="ververs">Verversen</button>
-      <button class="knop-secundair" id="export">CSV-export</button>
-      <button class="knop-secundair" id="klap-alles">Alles inklappen</button>
-    </div>
-    <div id="lijst"></div>
-    <section id="verw-sectie" class="verborgen">
-      <h2 style="margin-top:28px">Verwijderde inschrijvingen</h2>
-      <div id="verwijderd"></div>
     </section>
   </main>
 
@@ -257,6 +287,7 @@
       (!zoek || [naam(i), i.email, i.referentie, ...i.deelnemers.map(d => d.voornaam + ' ' + d.achternaam)]
         .join(' ').toLowerCase().includes(zoek)));
 
+    tekenContacten();
     $('#lijst').innerHTML = zicht.map(i => `
       <div class="inschr ${heeftOpen(i) ? 'open' : 'betaald'} ${isDicht(i.id) ? 'dicht' : ''}" data-sleutel="${i.id}">
         <div class="inschr-kop">
@@ -711,17 +742,63 @@
 
   $('#ververs').addEventListener('click', () => laad().catch(err => alert(err.message)));
 
-  $('#export').addEventListener('click', () => {
+  // ---------- CSV ----------
+  const downloadCsv = (bestand, rijen) => {
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = '\ufeff' + rijen.map(r => r.map(q).join(';')).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = bestand;
+    a.click();
+  };
+
+  $('#export').addEventListener('click', () => {
     const rijen = [['Referentie', 'Contactpersoon', 'E-mail', 'Telefoon', 'Betaald', 'Totaal', 'Voornaam', 'Achternaam', 'Geboortedatum', 'Team', 'Tarief', 'Prijs']];
     data.forEach(i => i.deelnemers.forEach(d => rijen.push([i.referentie, naam(i), i.email, i.telefoon, i.betaald ? 'ja' : 'nee',
       String(i.totaal_bedrag).replace('.', ','), d.voornaam, d.achternaam, gebdatum(d.geboortedatum), d.team, d.categorie, String(d.prijs).replace('.', ',')])));
-    const csv = '﻿' + rijen.map(r => r.map(q).join(';')).join('\r\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'inschrijvingen-fc-utrecht.csv';
-    a.click();
+    downloadCsv('inschrijvingen-fc-utrecht.csv', rijen);
   });
+
+  // ---------- contactpersonen ----------
+  function tekenContacten() {
+    const zoek = $('#zoek-contact').value.trim().toLowerCase();
+    const zicht = data.filter(i => !zoek || [naam(i), i.email].join(' ').toLowerCase().includes(zoek));
+    $('#contacten').innerHTML = zicht.length ? `
+      <table class="lijst contacten">
+        <thead><tr><th>Contactpersoon</th><th>E-mail</th><th>Telefoon</th><th>Referentie</th><th class="getal">Deelnemers</th><th>Betaald</th></tr></thead>
+        <tbody>${zicht.map(i => `<tr><td>${esc(naam(i))}</td><td>${esc(i.email)}</td><td>${esc(i.telefoon)}</td><td>${esc(i.referentie)}</td>
+          <td class="getal">${i.deelnemers.length}</td><td>${i.betaald ? 'ja' : 'nee'}</td></tr>`).join('')}</tbody>
+      </table>` : '<p>Geen contactpersonen gevonden.</p>';
+  }
+  $('#zoek-contact').addEventListener('input', tekenContacten);
+  $('#export-contact').addEventListener('click', () => {
+    const rijen = [['Referentie', 'Contactpersoon', 'E-mail', 'Telefoon', 'Deelnemers', 'Betaald']];
+    data.forEach(i => rijen.push([i.referentie, naam(i), i.email, i.telefoon, i.deelnemers.length, i.betaald ? 'ja' : 'nee']));
+    downloadCsv('contactpersonen-fc-utrecht.csv', rijen);
+  });
+
+  // ---------- secties (tabs) ----------
+  const TABS = ['statistieken', 'inschrijvingen', 'contactpersonen', 'instellingen'];
+  function toonTab(t, bewaar) {
+    if (!TABS.includes(t)) t = 'inschrijvingen';
+    TABS.forEach(x => {
+      $('#sec-' + x).classList.toggle('verborgen', x !== t);
+      const b = $('#tab-' + x);
+      b.setAttribute('aria-selected', x === t ? 'true' : 'false');
+      b.tabIndex = x === t ? 0 : -1;
+    });
+    if (bewaar && location.hash !== '#' + t) { try { history.replaceState(null, '', '#' + t); } catch {} }
+  }
+  TABS.forEach(t => $('#tab-' + t).addEventListener('click', () => toonTab(t, true)));
+  $('.tabs').addEventListener('keydown', (e) => {
+    const stap = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    const nu = TABS.findIndex(t => $('#tab-' + t).getAttribute('aria-selected') === 'true');
+    const nieuw = e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : stap ? (nu + stap + TABS.length) % TABS.length : -1;
+    if (nieuw < 0) return;
+    e.preventDefault(); toonTab(TABS[nieuw], true); $('#tab-' + TABS[nieuw]).focus();
+  });
+  window.addEventListener('hashchange', () => toonTab(location.hash.slice(1), false));
+  toonTab(location.hash.slice(1), false);
 
   if (ww) laad().catch(() => {});
 })();
